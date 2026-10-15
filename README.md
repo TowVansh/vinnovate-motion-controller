@@ -20,7 +20,7 @@ npm start
 
 | Requirement | How it is done |
 |---|---|
-| Gyro + accelerometer mapping | `deviceorientation` gamma/beta map to steering, with ±25° for full speed and clamping. `devicemotion` with acceleration above 14 m/s² counts as a shake and makes the ball jump (700 ms cooldown). |
+| Gyro + accelerometer mapping | `deviceorientation` gamma/beta map to steering, with ±12° for full speed and clamping. `devicemotion` with acceleration above 14 m/s² counts as a shake and makes the ball jump (700 ms cooldown). |
 | Pairing | The server issues a 4-letter room code. The game shows a QR code pointing to the pad URL with the code built in, and you can also type the code by hand. |
 | WebSocket streaming | The phone sends `{t:'s',x,y}` at 60 Hz, only when the value changes, plus a 250 ms keepalive. The server is a thin relay with no game logic. |
 | Browser game | A ball-balancing tilt maze with walls, holes (fall means respawn), a finish flag, race timer and falls counter. Physics uses sub-stepping, so fast balls cannot pass through walls. |

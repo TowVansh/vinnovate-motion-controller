@@ -72,7 +72,7 @@ let id = localStorage.getItem('padId');
 if (!id) { id = crypto.randomUUID ? crypto.randomUUID() : String(Math.random()).slice(2); localStorage.setItem('padId', id); }
 
 // ---------- sensors
-const MAX_TILT = 25; // degrees of tilt for full speed
+const MAX_TILT = 12; // degrees of tilt for full speed: small wrist movements are enough
 let beta = 0, gamma = 0, cal = JSON.parse(localStorage.getItem('cal') || '{"b":0,"g":0}');
 let tx = 0, ty = 0, lastShake = 0;
 const clamp = v => Math.max(-1, Math.min(1, v));

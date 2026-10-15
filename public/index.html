@@ -58,7 +58,7 @@ const MAZE = [
   '#..o..#.####...###G#',
   '####################',
 ];
-const ROWS = MAZE.length, COLS = MAZE[0].length, R = 0.3, ACC = 14, FRICTION = 1.6, JUMP_MS = 650;
+const ROWS = MAZE.length, COLS = MAZE[0].length, R = 0.3, ACC = 24, FRICTION = 1.4, JUMP_MS = 650;
 const COUNT_MS = 3000, SAMPLE_MS = 50; // 3-2-1 countdown; ghost path sampled at 20 Hz
 const tile = (x, y) => (MAZE[y] || '')[x] || '#';
 let START, GOAL;
