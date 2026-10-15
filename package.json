@@ -5,7 +5,8 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "test": "node test.js"
+    "test": "node test.js",
+    "share": "node share.js"
   },
   "license": "ISC",
   "type": "commonjs",

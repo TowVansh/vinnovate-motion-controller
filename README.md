@@ -12,7 +12,7 @@ npm start
 3. Accept the self-signed certificate warning once (phones only give motion sensors to HTTPS pages), then tap **Connect**.
 4. Hold the phone flat, tap **Calibrate**, and tilt to roll.
 
-If your Wi-Fi blocks devices from talking to each other (common on campus networks), connect the laptop to the phone's hotspot instead. You can set `LAN_IP=x.x.x.x` to force the address shown in the QR code. On Windows, allow Node through the firewall when asked.
+**Campus Wi-Fi that blocks device-to-device traffic, or a phone on mobile data:** run `npm run share` instead. It opens a free Cloudflare quick tunnel (this needs [cloudflared](https://github.com/cloudflare/cloudflared/releases); set `CLOUDFLARED=path	o\cloudflared.exe` if it is not on PATH) and points the QR code at the public HTTPS link. That way there is no certificate warning and no shared network is needed. The laptop still opens `http://localhost:5180`, so only the phone's hop goes through the tunnel (roughly 50–150 ms instead of 5–30 ms on a LAN). On Windows, allow Node through the firewall when asked for LAN mode.
 
 **App build:** the phone side is an installable PWA (`manifest.json` and a service worker). In Chrome on Android, use *Add to Home screen* / *Install app* to get a standalone app icon with no browser bar.
 

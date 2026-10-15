@@ -25,7 +25,9 @@ function serve(req, res) {
   const url = new URL(req.url, 'http://x');
   if (url.pathname === '/config') {
     res.writeHead(200, { 'content-type': 'application/json' });
-    return res.end(JSON.stringify({ padBase: process.env.PUBLIC_URL || (CLOUD ? '' : `https://${lanIp()}:${HTTPS_PORT}`) }));
+    // opened through a tunnel/proxy (e.g. cloudflared): the phone uses that same public HTTPS origin
+    const proxied = req.headers['cf-connecting-ip'] || req.headers['x-forwarded-for'];
+    return res.end(JSON.stringify({ padBase: process.env.PUBLIC_URL || (CLOUD || proxied ? '' : `https://${lanIp()}:${HTTPS_PORT}`) }));
   }
   const file = path.join(PUBLIC, path.normalize(url.pathname === '/' ? '/index.html' : url.pathname));
   if (!file.startsWith(PUBLIC)) { res.writeHead(403); return res.end(); }
