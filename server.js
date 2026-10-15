@@ -1,5 +1,5 @@
 // Motion controller relay: serves the game + phone pad, pairs them by room code, relays WebSocket messages.
-// Laptop: http://localhost:8080   Phone: https://<lan-ip>:8443/pad.html?room=CODE (phones need HTTPS for motion sensors)
+// Laptop: http://localhost:5180   Phone: https://<lan-ip>:5443/pad.html?room=CODE (phones need HTTPS for motion sensors)
 const http = require('http');
 const https = require('https');
 const fs = require('fs');
@@ -7,8 +7,8 @@ const path = require('path');
 const os = require('os');
 const { WebSocketServer } = require('ws');
 
-const HTTP_PORT = +process.env.PORT || 8080;
-const HTTPS_PORT = +process.env.HTTPS_PORT || 8443;
+const HTTP_PORT = +process.env.PORT || 5180;
+const HTTPS_PORT = +process.env.HTTPS_PORT || 5443;
 const CLOUD = !!process.env.PORT; // on a host like Render the platform terminates TLS for us
 const PUBLIC = path.join(__dirname, 'public');
 const TYPES = { '.html': 'text/html', '.js': 'text/javascript', '.json': 'application/json', '.svg': 'image/svg+xml', '.css': 'text/css' };

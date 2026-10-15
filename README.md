@@ -7,8 +7,8 @@ npm install
 npm start
 ```
 
-1. On the laptop, open **http://localhost:8080**. It shows a room code and a QR code.
-2. On the phone (same Wi-Fi), scan the QR code. It opens `https://<laptop-ip>:8443/pad.html?room=CODE`.
+1. On the laptop, open **http://localhost:5180**. It shows a room code and a QR code.
+2. On the phone (same Wi-Fi), scan the QR code. It opens `https://<laptop-ip>:5443/pad.html?room=CODE`.
 3. Accept the self-signed certificate warning once (phones only give motion sensors to HTTPS pages), then tap **Connect**.
 4. Hold the phone flat, tap **Calibrate**, and tilt to roll.
 
