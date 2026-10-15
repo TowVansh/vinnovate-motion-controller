@@ -190,7 +190,7 @@ function step(p, dt, now) {
   if (hit > 2.5 && now - p.lastBuzz > 150) { p.lastBuzz = now; buzz(p, Math.min(60, hit * 8)); }
   while (now - p.runStart >= p.path.length * SAMPLE_MS) p.path.push([+p.x.toFixed(2), +p.y.toFixed(2)]);
   const t = tile(Math.floor(p.x), Math.floor(p.y));
-  if (t === 'o' && now > p.jumpUntil) { p.runs++; spawn(p, false); buzz(p, [200, 80, 200]); banner(`${p.name} fell in! New run, clock reset`); }
+  if (t === 'o' && now > p.jumpUntil) { p.runs++; spawn(p, true); buzz(p, [200, 80, 200]); banner(`${p.name} fell in! New run in 3…`); }
   if (t === 'G') {
     p.finished = Math.round(now - p.runStart); p.runs++;
     p.path.push([+p.x.toFixed(2), +p.y.toFixed(2)]);

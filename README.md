@@ -30,7 +30,7 @@ npm start
 **Bonus items done:**
 - Local multiplayer: up to 8 phones, each with its own colored ball, racing in one maze
 - Leaderboard: each phone enters a name, and the best finish time per name is ranked and saved to `leaderboard.json`, so it survives restarts. The game shows the top 10, and the phone shows your time, your rank and whether it's a new personal best.
-- Independent runs: every run has its own clock, and falling into a hole starts a fresh run with the timer reset. After finishing, a new run starts with a 3-2-1 countdown (shown on the laptop and on the phone, with a buzz on each beat). **Restart race** gives everyone a countdown.
+- Independent runs: every run has its own clock, and falling into a hole sends you back to start for a fresh run, with a 3-2-1 countdown and the timer reset. After finishing, a new run starts with a 3-2-1 countdown (shown on the laptop and on the phone, with a buzz on each beat). **Restart race** gives everyone a countdown.
 - Ghosts: each finished run is recorded at 20 Hz. While you play, a **blue ghost** replays your personal best and a **yellow ghost** replays the #1 run on the leaderboard, both on your run's clock, so you can see exactly where you are ahead or behind.
 - On-screen JUMP button
 - Vibration feedback: a bump scaled to impact speed when you hit a wall, a double buzz when you fall into a hole, and a pattern when you finish
