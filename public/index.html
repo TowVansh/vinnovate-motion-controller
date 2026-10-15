@@ -1,0 +1,194 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tilt Maze</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<style>
+  :root { --bg:#14120f; --panel:#1f1c18; --ink:#f3efe7; --muted:#a39d92; --wall:#4a443b; --floor:#2a2621; --ok:#4ade80; --bad:#f87171; }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink); font:15px/1.4 system-ui, sans-serif; display:flex; height:100vh; }
+  #side { width:300px; padding:16px; background:var(--panel); display:flex; flex-direction:column; gap:12px; overflow:auto; }
+  main { flex:1; display:flex; align-items:center; justify-content:center; position:relative; }
+  canvas { max-width:100%; max-height:100%; }
+  h1 { font-size:22px; margin:0; }
+  .code { font:700 40px/1 ui-monospace, monospace; letter-spacing:6px; }
+  #qr { background:#fff; padding:8px; width:fit-content; border-radius:6px; }
+  .dot { display:inline-block; width:10px; height:10px; border-radius:50%; margin-right:6px; }
+  .p { display:flex; align-items:center; justify-content:space-between; padding:6px 8px; background:#00000033; border-radius:6px; margin-bottom:4px; }
+  .muted { color:var(--muted); font-size:13px; }
+  button { font:inherit; padding:8px 12px; border-radius:6px; border:0; background:#facc15; color:#111; font-weight:600; cursor:pointer; }
+  #banner { position:absolute; top:16px; left:50%; transform:translateX(-50%); background:#000a; padding:8px 16px; border-radius:8px; font-weight:600; display:none; }
+  a { color:#facc15; }
+</style>
+</head>
+<body>
+<div id="side">
+  <h1>Tilt Maze</h1>
+  <div><span id="hostDot" class="dot" style="background:var(--bad)"></span><span id="hostState">connecting…</span></div>
+  <div class="muted">Scan with your phone, or open the link and enter the code:</div>
+  <div id="qr"></div>
+  <div class="code" id="code">····</div>
+  <a id="padLink" class="muted" target="_blank"></a>
+  <div>
+    <div class="muted" style="margin-bottom:6px">Players (tilt to roll, shake or tap Jump to hop holes)</div>
+    <div id="players"><div class="muted">No phones yet. Arrow keys + space also work for testing.</div></div>
+  </div>
+  <button id="restart">Restart race</button>
+  <div class="muted">Latency = phone→game→phone round trip / 2, measured every second.</div>
+</div>
+<main><canvas id="c"></canvas><div id="banner"></div></main>
+<script>
+const MAZE = [
+  '####################',
+  '#S.....#......o....#',
+  '#.####.#.####.###..#',
+  '#.#..o.#....#...#..#',
+  '#.#.####.##.###.#.##',
+  '#...#....#o.....#..#',
+  '###.#.####.######..#',
+  '#...#.o..#......#o.#',
+  '#.###.##.#.####.#..#',
+  '#.....#....#o......#',
+  '#..o..#.####...###G#',
+  '####################',
+];
+const ROWS = MAZE.length, COLS = MAZE[0].length, R = 0.3, ACC = 14, FRICTION = 1.6, JUMP_MS = 650;
+const tile = (x, y) => (MAZE[y] || '')[x] || '#';
+let START, GOAL;
+MAZE.forEach((row, y) => [...row].forEach((ch, x) => { if (ch === 'S') START = { x: x + .5, y: y + .5 }; if (ch === 'G') GOAL = { x, y }; }));
+
+const cv = document.getElementById('c'), g = cv.getContext('2d');
+let T = 40;
+function resize() {
+  const m = cv.parentElement;
+  T = Math.floor(Math.min(m.clientWidth / COLS, m.clientHeight / ROWS));
+  cv.width = COLS * T; cv.height = ROWS * T;
+}
+addEventListener('resize', resize); resize();
+
+// ---------- players
+const players = new Map(); // id -> state
+let raceStart = performance.now();
+function spawn(p) { Object.assign(p, { x: START.x, y: START.y, vx: 0, vy: 0, finished: null, falls: p.falls || 0 }); }
+function getPlayer(id, color = '#fff', name) {
+  if (!players.has(id)) { const p = { id, color, name: name || id.slice(0, 4), tx: 0, ty: 0, jumpUntil: 0, on: true, rtt: null, lastBuzz: 0 }; spawn(p); players.set(id, p); }
+  return players.get(id);
+}
+
+// ---------- network (auto-reconnect, keeps the same room code)
+let ws, code = sessionStorage.getItem('code'), retry = 500;
+function connect() {
+  ws = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host);
+  ws.onopen = () => { retry = 500; ws.send(JSON.stringify({ t: 'host', code })); setHost(true); };
+  ws.onclose = () => { setHost(false); setTimeout(connect, retry); retry = Math.min(retry * 2, 4000); };
+  ws.onmessage = e => {
+    const m = JSON.parse(e.data);
+    if (m.t === 'room') { code = m.code; sessionStorage.setItem('code', code); showPairing(); }
+    else if (m.t === 'player') { const p = getPlayer(m.id, m.color, m.name); p.on = m.on; if (m.color) p.color = m.color; renderPlayers(); }
+    else if (m.t === 's') { const p = getPlayer(m.id); p.tx = m.x; p.ty = m.y; if (m.r != null) p.rtt = m.r; p.on = true; }
+    else if (m.t === 'jump') jump(getPlayer(m.id));
+    else if (m.t === 'ping') out({ t: 'pong', to: m.id, ts: m.ts });
+  };
+}
+const out = m => ws && ws.readyState === 1 && ws.send(JSON.stringify(m));
+const buzz = (p, pattern) => { if (p.id !== 'kb') out({ t: 'fx', to: p.id, vibrate: pattern }); };
+function setHost(on) {
+  document.getElementById('hostDot').style.background = on ? 'var(--ok)' : 'var(--bad)';
+  document.getElementById('hostState').textContent = on ? 'server connected' : 'reconnecting…';
+}
+async function showPairing() {
+  const { padBase } = await (await fetch('/config')).json();
+  const url = `${padBase || location.origin}/pad.html?room=${code}`;
+  document.getElementById('code').textContent = code;
+  const a = document.getElementById('padLink'); a.href = a.textContent = url;
+  const q = document.getElementById('qr'); q.innerHTML = '';
+  if (window.QRCode) new QRCode(q, { text: url, width: 180, height: 180 });
+}
+function renderPlayers() {
+  const el = document.getElementById('players');
+  const list = [...players.values()];
+  if (!list.length) return;
+  el.innerHTML = list.map(p => `<div class="p"><span><span class="dot" style="background:${p.color}"></span>${p.name}${p.on ? '' : ' <span class="muted">(offline)</span>'}</span>
+    <span class="muted">${p.finished ? (p.finished / 1000).toFixed(1) + 's 🏁' : p.rtt != null ? Math.round(p.rtt / 2) + ' ms' : ''} ${p.falls ? '· ' + p.falls + ' falls' : ''}</span></div>`).join('');
+}
+setInterval(renderPlayers, 500);
+connect();
+
+// ---------- keyboard player for testing without a phone
+const keys = {};
+addEventListener('keydown', e => { keys[e.key] = true; if (e.key === ' ') jump(getPlayer('kb', '#ffffff', 'keyboard')); });
+addEventListener('keyup', e => keys[e.key] = false);
+
+function jump(p) { if (performance.now() > p.jumpUntil) p.jumpUntil = performance.now() + JUMP_MS; }
+
+document.getElementById('restart').onclick = () => {
+  raceStart = performance.now();
+  players.forEach(spawn);
+  out({ t: 'fx', vibrate: [80, 60, 80] });
+  banner('Go!');
+};
+let bannerTimer;
+function banner(text) { const b = document.getElementById('banner'); b.textContent = text; b.style.display = 'block'; clearTimeout(bannerTimer); bannerTimer = setTimeout(() => b.style.display = 'none', 2000); }
+
+// ---------- physics
+function collide(p) {
+  let hit = 0;
+  for (let ty = Math.floor(p.y) - 1; ty <= Math.floor(p.y) + 1; ty++)
+    for (let tx = Math.floor(p.x) - 1; tx <= Math.floor(p.x) + 1; tx++) {
+      if (tile(tx, ty) !== '#') continue;
+      const cx = Math.max(tx, Math.min(p.x, tx + 1)), cy = Math.max(ty, Math.min(p.y, ty + 1));
+      const dx = p.x - cx, dy = p.y - cy, d = Math.hypot(dx, dy);
+      if (d >= R || d === 0) continue;
+      const nx = dx / d, ny = dy / d, push = R - d;
+      p.x += nx * push; p.y += ny * push;
+      const vn = p.vx * nx + p.vy * ny;
+      if (vn < 0) { p.vx -= 1.4 * vn * nx; p.vy -= 1.4 * vn * ny; hit = Math.max(hit, -vn); }
+    }
+  return hit;
+}
+function step(p, dt, now) {
+  if (p.finished) return;
+  if (p.id === 'kb') { p.tx = (keys.ArrowRight ? 1 : 0) - (keys.ArrowLeft ? 1 : 0); p.ty = (keys.ArrowDown ? 1 : 0) - (keys.ArrowUp ? 1 : 0); }
+  p.vx += p.tx * ACC * dt; p.vy += p.ty * ACC * dt;
+  const f = Math.max(0, 1 - FRICTION * dt); p.vx *= f; p.vy *= f;
+  const n = Math.ceil(Math.hypot(p.vx, p.vy) * dt / (R * 0.5)) || 1; // substeps: no tunnelling through walls
+  let hit = 0;
+  for (let i = 0; i < n; i++) { p.x += p.vx * dt / n; p.y += p.vy * dt / n; hit = Math.max(hit, collide(p)); }
+  if (hit > 2.5 && now - p.lastBuzz > 150) { p.lastBuzz = now; buzz(p, Math.min(60, hit * 8)); }
+  const t = tile(Math.floor(p.x), Math.floor(p.y));
+  if (t === 'o' && now > p.jumpUntil) { p.falls++; spawn(p); buzz(p, [200, 80, 200]); }
+  if (t === 'G') { p.finished = now - raceStart; buzz(p, [60, 40, 60, 40, 300]); banner(`${p.name} finished in ${(p.finished / 1000).toFixed(1)}s!`); }
+}
+
+// ---------- render
+function draw(now) {
+  g.fillStyle = getComputedStyle(document.body).getPropertyValue('--floor'); g.fillRect(0, 0, cv.width, cv.height);
+  for (let y = 0; y < ROWS; y++) for (let x = 0; x < COLS; x++) {
+    const t = tile(x, y);
+    if (t === '#') { g.fillStyle = '#4a443b'; g.fillRect(x * T, y * T, T, T); }
+    if (t === 'o') { g.fillStyle = '#000'; g.beginPath(); g.arc((x + .5) * T, (y + .5) * T, T * .38, 0, 7); g.fill(); }
+    if (t === 'G') { g.fillStyle = '#4ade8055'; g.fillRect(x * T, y * T, T, T); g.fillStyle = '#4ade80'; g.font = `${T * .6}px sans-serif`; g.fillText('🏁', x * T + T * .15, y * T + T * .72); }
+    if (t === 'S') { g.fillStyle = '#facc1533'; g.fillRect(x * T, y * T, T, T); }
+  }
+  for (const p of players.values()) {
+    const air = Math.max(0, p.jumpUntil - now) / JUMP_MS, lift = Math.sin(air * Math.PI) * 0.35;
+    g.globalAlpha = p.on ? 1 : 0.35;
+    g.fillStyle = '#0006'; g.beginPath(); g.arc(p.x * T + 3, p.y * T + 4, R * T, 0, 7); g.fill();
+    g.fillStyle = p.color; g.beginPath(); g.arc(p.x * T, (p.y - lift) * T, R * T * (1 + lift), 0, 7); g.fill();
+    g.globalAlpha = 1;
+  }
+}
+
+let last = performance.now();
+function frame(now) {
+  const dt = Math.min(0.033, (now - last) / 1000); last = now;
+  for (const p of players.values()) step(p, dt, now);
+  draw(now);
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>

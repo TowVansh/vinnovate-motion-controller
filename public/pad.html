@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+<meta name="theme-color" content="#14120f">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon.svg">
+<title>Tilt Pad</title>
+<style>
+  :root { --bg:#14120f; --panel:#1f1c18; --ink:#f3efe7; --muted:#a39d92; --ok:#4ade80; --bad:#f87171; --me:#facc15; }
+  * { box-sizing:border-box; -webkit-user-select:none; user-select:none; touch-action:manipulation; }
+  body { margin:0; background:var(--bg); color:var(--ink); font:16px/1.4 system-ui, sans-serif; height:100vh; display:flex; flex-direction:column; padding:16px; gap:14px; }
+  .row { display:flex; justify-content:space-between; align-items:center; }
+  .dot { display:inline-block; width:12px; height:12px; border-radius:50%; margin-right:8px; vertical-align:middle; }
+  #pad { flex:1; background:var(--panel); border-radius:16px; position:relative; overflow:hidden; }
+  #knob { position:absolute; width:56px; height:56px; border-radius:50%; background:var(--me); left:50%; top:50%; transform:translate(-50%,-50%); box-shadow:0 0 0 6px #0004; }
+  #pad::before, #pad::after { content:''; position:absolute; background:#ffffff14; }
+  #pad::before { left:50%; top:0; bottom:0; width:2px; } #pad::after { top:50%; left:0; right:0; height:2px; }
+  button { font:600 18px system-ui; padding:16px; border-radius:12px; border:0; background:#3a352e; color:var(--ink); flex:1; }
+  button.primary { background:var(--me); color:#111; }
+  .btns { display:flex; gap:10px; }
+  #jump { font-size:24px; padding:26px; }
+  input { font:600 28px ui-monospace, monospace; letter-spacing:6px; width:100%; padding:12px; text-transform:uppercase; text-align:center; border-radius:10px; border:0; }
+  .muted { color:var(--muted); font-size:14px; }
+  #start { position:fixed; inset:0; background:var(--bg); display:flex; flex-direction:column; justify-content:center; padding:24px; gap:16px; }
+  #err { color:var(--bad); min-height:1.4em; }
+</style>
+</head>
+<body>
+<div id="start">
+  <h1 style="margin:0">Tilt Pad</h1>
+  <div class="muted">Your phone becomes the controller. Tilt to roll, shake or tap Jump.</div>
+  <input id="codeIn" maxlength="4" placeholder="CODE" autocomplete="off">
+  <button class="primary" id="go">Connect</button>
+  <div id="err"></div>
+</div>
+
+<div class="row">
+  <div><span id="dot" class="dot" style="background:var(--bad)"></span><span id="state">offline</span></div>
+  <div class="muted" id="lat">– ms</div>
+</div>
+<div id="pad"><div id="knob"></div></div>
+<div class="muted" id="raw">tilt 0, 0</div>
+<div class="btns"><button id="cal">Calibrate</button><button id="jump" class="primary">JUMP</button></div>
+
+<script>
+const $ = id => document.getElementById(id);
+const params = new URLSearchParams(location.search);
+$('codeIn').value = params.get('room') || localStorage.getItem('code') || '';
+let id = localStorage.getItem('padId');
+if (!id) { id = crypto.randomUUID ? crypto.randomUUID() : String(Math.random()).slice(2); localStorage.setItem('padId', id); }
+
+// ---------- sensors
+const MAX_TILT = 25; // degrees of tilt for full speed
+let beta = 0, gamma = 0, cal = JSON.parse(localStorage.getItem('cal') || '{"b":0,"g":0}');
+let tx = 0, ty = 0, lastShake = 0;
+const clamp = v => Math.max(-1, Math.min(1, v));
+function onOrient(e) {
+  if (e.beta == null) return;
+  beta = e.beta; gamma = e.gamma;
+  tx = clamp((gamma - cal.g) / MAX_TILT);
+  ty = clamp((beta - cal.b) / MAX_TILT);
+}
+function onMotion(e) {
+  const a = e.acceleration && e.acceleration.x != null ? e.acceleration : null;
+  const mag = a ? Math.hypot(a.x, a.y, a.z) : Math.abs(Math.hypot(e.accelerationIncludingGravity.x, e.accelerationIncludingGravity.y, e.accelerationIncludingGravity.z) - 9.81);
+  if (mag > 14 && performance.now() - lastShake > 700) { lastShake = performance.now(); doJump(); }
+}
+async function startSensors() {
+  // iOS needs an explicit permission prompt from a user gesture; Android grants it on HTTPS
+  for (const E of [window.DeviceOrientationEvent, window.DeviceMotionEvent])
+    if (E && typeof E.requestPermission === 'function' && (await E.requestPermission()) !== 'granted') throw new Error('Motion permission denied');
+  if (!window.isSecureContext) throw new Error('Motion sensors need HTTPS. Open the https:// link.');
+  addEventListener('deviceorientation', onOrient);
+  addEventListener('devicemotion', onMotion);
+}
+$('cal').onclick = () => { cal = { b: beta, g: gamma }; localStorage.setItem('cal', JSON.stringify(cal)); vibrate(40); };
+
+// ---------- network: auto-reconnect with backoff, same id so the game keeps our ball
+let ws, code, retry = 300, rtt = null, hostOn = false;
+function connect() {
+  ws = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host);
+  setState('connecting…', '#facc15');
+  ws.onopen = () => { retry = 300; ws.send(JSON.stringify({ t: 'join', code, id, name: navigator.userAgentData?.platform || 'phone' })); };
+  ws.onclose = () => { setState('reconnecting…', 'var(--bad)'); setTimeout(connect, retry); retry = Math.min(retry * 2, 4000); };
+  ws.onmessage = e => {
+    const m = JSON.parse(e.data);
+    if (m.t === 'joined') { document.documentElement.style.setProperty('--me', m.color); hostOn = m.host; setState(hostOn ? 'connected to game' : 'waiting for game…', hostOn ? 'var(--ok)' : '#facc15'); $('start').style.display = 'none'; }
+    else if (m.t === 'error') { $('err').textContent = m.msg; $('start').style.display = 'flex'; ws.onclose = null; ws.close(); }
+    else if (m.t === 'host') { hostOn = m.on; setState(m.on ? 'connected to game' : 'game disconnected', m.on ? 'var(--ok)' : 'var(--bad)'); }
+    else if (m.t === 'pong') { rtt = performance.now() - m.ts; $('lat').textContent = `${Math.round(rtt / 2)} ms`; }
+    else if (m.t === 'fx' && m.vibrate) vibrate(m.vibrate);
+  };
+}
+const out = m => ws && ws.readyState === 1 && ws.send(JSON.stringify(m));
+function setState(text, color) { $('state').textContent = text; $('dot').style.background = color; }
+function vibrate(p) { navigator.vibrate && navigator.vibrate(p); }
+function doJump() { out({ t: 'jump' }); vibrate(30); }
+$('jump').onpointerdown = e => { e.preventDefault(); doJump(); };
+
+// stream at 60 Hz, only when something changed (and a keepalive every 250 ms)
+let sent = { x: 9, y: 9 }, lastSend = 0;
+setInterval(() => {
+  const x = +tx.toFixed(3), y = +ty.toFixed(3), now = performance.now();
+  if (x !== sent.x || y !== sent.y || now - lastSend > 250) {
+    out({ t: 's', x, y, r: rtt == null ? null : Math.round(rtt) }); sent = { x, y }; lastSend = now;
+  }
+  $('knob').style.left = `${50 + x * 42}%`; $('knob').style.top = `${50 + y * 42}%`;
+  $('raw').textContent = `tilt ${gamma.toFixed(0)}°, ${beta.toFixed(0)}°  →  ${x.toFixed(2)}, ${y.toFixed(2)}`;
+}, 16);
+setInterval(() => out({ t: 'ping', ts: performance.now() }), 1000);
+
+$('go').onclick = async () => {
+  code = $('codeIn').value.trim().toUpperCase();
+  if (code.length !== 4) return ($('err').textContent = 'Enter the 4-letter code shown on the laptop');
+  localStorage.setItem('code', code);
+  try { await startSensors(); } catch (e) { $('err').textContent = e.message; return; }
+  try { await navigator.wakeLock?.request('screen'); } catch {}
+  if (!ws) connect(); else ws.send(JSON.stringify({ t: 'join', code, id }));
+};
+if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
+</script>
+</body>
+</html>
