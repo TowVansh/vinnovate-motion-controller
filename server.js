@@ -23,6 +23,11 @@ function lanIp() { // the Wi-Fi/Ethernet address a phone can reach, not a WSL/VM
 
 function serve(req, res) {
   const url = new URL(req.url, 'http://x');
+  if (url.pathname === '/log' && req.method === 'POST') { // phone-side errors, so problems on a phone are visible here
+    let body = '';
+    req.on('data', d => { if (body.length < 2000) body += d; });
+    return req.on('end', () => { console.log('[pad]', body.slice(0, 2000)); res.end(); });
+  }
   if (url.pathname === '/config') {
     res.writeHead(200, { 'content-type': 'application/json' });
     // opened through a tunnel/proxy (e.g. cloudflared): the phone uses that same public HTTPS origin
@@ -60,7 +65,8 @@ wss.on('connection', ws => {
     const room = rooms.get(ws.room);
 
     if (m.t === 'host') { // game opens (or reconnects to) a room
-      let code = m.code && rooms.has(m.code) ? m.code : newCode();
+      // a reloaded game (or a restarted server) keeps its code, so phones that already scanned still match
+      let code = /^[A-Z]{4}$/.test(m.code || '') ? m.code : newCode();
       if (!rooms.has(code)) rooms.set(code, { pads: new Map(), colors: new Map() });
       const r = rooms.get(code);
       r.host = ws; ws.room = code; ws.role = 'host';
@@ -72,7 +78,7 @@ wss.on('connection', ws => {
     if (m.t === 'join') { // phone joins with a stable id so a reconnect keeps its ball and color
       const code = String(m.code || '').toUpperCase();
       const r = rooms.get(code);
-      if (!r) return send(ws, { t: 'error', msg: 'No game with that code' });
+      if (!r) { console.log(`pad join failed: no room ${code}`); return send(ws, { t: 'error', msg: 'No game with that code' }); }
       if (typeof m.id !== 'string' || !m.id || m.id.length > 64) return send(ws, { t: 'error', msg: 'Bad device id' });
       if (!r.pads.has(m.id) && r.pads.size >= 8) return send(ws, { t: 'error', msg: 'Room full (8 phones)' });
       const old = r.pads.get(m.id);
@@ -80,6 +86,7 @@ wss.on('connection', ws => {
       if (!r.colors.has(m.id)) r.colors.set(m.id, COLORS[r.colors.size % COLORS.length]);
       r.pads.set(m.id, ws);
       ws.room = code; ws.role = 'pad'; ws.id = m.id;
+      console.log(`pad ${m.id.slice(0, 8)} joined ${code}`);
       send(ws, { t: 'joined', color: r.colors.get(m.id), host: !!(r.host && r.host.readyState === 1) });
       send(r.host, { t: 'player', id: m.id, name: m.name, color: r.colors.get(m.id), on: true });
       return;

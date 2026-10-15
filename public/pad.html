@@ -30,9 +30,15 @@
 <body>
 <div id="start">
   <h1 style="margin:0">Tilt Pad</h1>
-  <div class="muted">Your phone becomes the controller. Tilt to roll, shake or tap Jump.</div>
+  <div class="muted">Your phone becomes the controller for the maze on the laptop.</div>
+  <ol class="muted" style="margin:0;padding-left:20px">
+    <li>Check the code matches the one on the laptop screen</li>
+    <li>Tap <b>START</b> (allow motion access if asked)</li>
+    <li>Hold the phone flat and tilt it to roll your ball</li>
+  </ol>
+  <label class="muted" for="codeIn">Game code</label>
   <input id="codeIn" maxlength="4" placeholder="CODE" autocomplete="off">
-  <button class="primary" id="go">Connect</button>
+  <button class="primary" id="go" style="font-size:24px;padding:20px">▶ START</button>
   <div id="err"></div>
 </div>
 
@@ -40,10 +46,20 @@
   <div><span id="dot" class="dot" style="background:var(--bad)"></span><span id="state">offline</span></div>
   <div class="muted" id="lat">– ms</div>
 </div>
-<div id="pad"><div id="knob"></div></div>
+<div class="muted" style="text-align:center">Tilt the phone to roll your ball &middot; shake or press JUMP to hop over holes</div>
+<div id="pad"><div id="knob"></div><div class="muted" style="position:absolute;bottom:8px;width:100%;text-align:center;font-size:12px">this dot shows your tilt &middot; you can also drag it</div></div>
 <div class="muted" id="raw">tilt 0, 0</div>
-<div class="btns"><button id="cal">Calibrate</button><button id="jump" class="primary">JUMP</button></div>
+<div class="btns"><button id="cal">Set level<br><span style="font-size:12px;font-weight:400">hold still, tap</span></button><button id="jump" class="primary">JUMP</button></div>
 
+<script>
+// report any script error to the laptop console and show it on screen (old phone browsers, blocked features)
+function report(msg, show) {
+  try { fetch('log', { method: 'POST', body: String(msg) + ' | ' + navigator.userAgent }); } catch (e) {}
+  var el = document.getElementById('err'); if (el && show) el.textContent = String(msg);
+}
+window.onerror = function (m, src, line) { report('error: ' + m + ' @' + line, true); };
+window.onunhandledrejection = function (e) { report('rejection: ' + (e.reason && e.reason.message || e.reason), true); };
+</script>
 <script>
 const $ = id => document.getElementById(id);
 const params = new URLSearchParams(location.search);
@@ -98,12 +114,12 @@ let ws, code, retry = 300, rtt = null, hostOn = false;
 function connect() {
   ws = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host);
   setState('connecting…', '#facc15');
-  ws.onopen = () => { retry = 300; ws.send(JSON.stringify({ t: 'join', code, id, name: navigator.userAgentData?.platform || 'phone' })); };
+  ws.onopen = () => { retry = 300; report('socket open, joining ' + code); ws.send(JSON.stringify({ t: 'join', code, id, name: (navigator.userAgentData && navigator.userAgentData.platform) || 'phone' })); };
   ws.onclose = () => { setState('reconnecting…', 'var(--bad)'); setTimeout(connect, retry); retry = Math.min(retry * 2, 4000); };
   ws.onmessage = e => {
     const m = JSON.parse(e.data);
-    if (m.t === 'joined') { document.documentElement.style.setProperty('--me', m.color); hostOn = m.host; setState(hostOn ? 'connected to game' : 'waiting for game…', hostOn ? 'var(--ok)' : '#facc15'); $('start').style.display = 'none'; }
-    else if (m.t === 'error') { $('err').textContent = m.msg; $('start').style.display = 'flex'; ws.onclose = null; ws.close(); }
+    if (m.t === 'joined') { report('joined OK'); document.documentElement.style.setProperty('--me', m.color); hostOn = m.host; setState(hostOn ? 'connected to game' : 'waiting for game…', hostOn ? 'var(--ok)' : '#facc15'); $('start').style.display = 'none'; }
+    else if (m.t === 'error') { $('go').textContent = '▶ START'; $('err').textContent = m.msg; $('start').style.display = 'flex'; ws.onclose = null; ws.close(); }
     else if (m.t === 'host') { hostOn = m.on; setState(m.on ? 'connected to game' : 'game disconnected', m.on ? 'var(--ok)' : 'var(--bad)'); }
     else if (m.t === 'pong') { rtt = performance.now() - m.ts; $('lat').textContent = `${Math.round(rtt / 2)} ms`; }
     else if (m.t === 'fx' && m.vibrate) vibrate(m.vibrate);
@@ -128,12 +144,14 @@ setInterval(() => {
 setInterval(() => out({ t: 'ping', ts: performance.now() }), 1000);
 
 $('go').onclick = async () => {
+  report('connect tapped');
   code = $('codeIn').value.trim().toUpperCase();
-  if (code.length !== 4) return ($('err').textContent = 'Enter the 4-letter code shown on the laptop');
+  if (code.length !== 4) return ($('err').textContent = 'Type the 4-letter code shown on the laptop screen');
   localStorage.setItem('code', code);
-  if (!ws) connect(); else ws.send(JSON.stringify({ t: 'join', code, id }));
+  $('go').textContent = 'Connecting…';
+  if (!ws) connect(); else out({ t: 'join', code, id }); // a second tap while the socket is still opening is harmless
   try { await startSensors(); } catch (e) { $('raw').textContent = e.message + ' Drag the yellow dot instead.'; }
-  try { await navigator.wakeLock?.request('screen'); } catch {}
+  try { if (navigator.wakeLock) await navigator.wakeLock.request('screen'); } catch (e) {}
 };
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
 </script>
