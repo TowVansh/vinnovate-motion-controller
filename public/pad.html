@@ -67,14 +67,30 @@ function onMotion(e) {
   const mag = a ? Math.hypot(a.x, a.y, a.z) : Math.abs(Math.hypot(e.accelerationIncludingGravity.x, e.accelerationIncludingGravity.y, e.accelerationIncludingGravity.z) - 9.81);
   if (mag > 14 && performance.now() - lastShake > 700) { lastShake = performance.now(); doJump(); }
 }
+let sensorEvents = 0;
 async function startSensors() {
-  // iOS needs an explicit permission prompt from a user gesture; Android grants it on HTTPS
-  for (const E of [window.DeviceOrientationEvent, window.DeviceMotionEvent])
-    if (E && typeof E.requestPermission === 'function' && (await E.requestPermission()) !== 'granted') throw new Error('Motion permission denied');
   if (!window.isSecureContext) throw new Error('Motion sensors need HTTPS. Open the https:// link.');
-  addEventListener('deviceorientation', onOrient);
+  // iOS: both prompts must start inside the same tap, so request them together, not one after another
+  const asks = [window.DeviceOrientationEvent, window.DeviceMotionEvent]
+    .filter(E => E && typeof E.requestPermission === 'function').map(E => E.requestPermission());
+  if ((await Promise.all(asks)).some(r => r !== 'granted')) throw new Error('Motion permission denied. Allow motion access and try again.');
+  addEventListener('deviceorientation', e => { if (e.beta != null) sensorEvents++; onOrient(e); });
   addEventListener('devicemotion', onMotion);
+  setTimeout(() => { // no data: sensors blocked by the browser, fall back to dragging on the pad
+    if (!sensorEvents) $('raw').textContent = 'No tilt data from this browser (check Site settings > Motion sensors). Drag the yellow dot instead.';
+  }, 2000);
 }
+// touch fallback: drag inside the pad to steer, so the controller works even where motion sensors are blocked
+let dragging = false;
+function drag(e) {
+  const r = $('pad').getBoundingClientRect();
+  tx = clamp(((e.clientX - r.left) / r.width - 0.5) * 2.4);
+  ty = clamp(((e.clientY - r.top) / r.height - 0.5) * 2.4);
+}
+$('pad').addEventListener('pointerdown', e => { dragging = true; $('pad').setPointerCapture(e.pointerId); drag(e); });
+$('pad').addEventListener('pointermove', e => dragging && drag(e));
+$('pad').addEventListener('pointerup', () => { dragging = false; if (!sensorEvents) tx = ty = 0; });
+$('pad').style.touchAction = 'none';
 $('cal').onclick = () => { cal = { b: beta, g: gamma }; localStorage.setItem('cal', JSON.stringify(cal)); vibrate(40); };
 
 // ---------- network: auto-reconnect with backoff, same id so the game keeps our ball
@@ -107,7 +123,7 @@ setInterval(() => {
     out({ t: 's', x, y, r: rtt == null ? null : Math.round(rtt) }); sent = { x, y }; lastSend = now;
   }
   $('knob').style.left = `${50 + x * 42}%`; $('knob').style.top = `${50 + y * 42}%`;
-  $('raw').textContent = `tilt ${gamma.toFixed(0)}°, ${beta.toFixed(0)}°  →  ${x.toFixed(2)}, ${y.toFixed(2)}`;
+  if (sensorEvents) $('raw').textContent = `tilt ${gamma.toFixed(0)}°, ${beta.toFixed(0)}°  →  ${x.toFixed(2)}, ${y.toFixed(2)}`;
 }, 16);
 setInterval(() => out({ t: 'ping', ts: performance.now() }), 1000);
 
@@ -115,9 +131,9 @@ $('go').onclick = async () => {
   code = $('codeIn').value.trim().toUpperCase();
   if (code.length !== 4) return ($('err').textContent = 'Enter the 4-letter code shown on the laptop');
   localStorage.setItem('code', code);
-  try { await startSensors(); } catch (e) { $('err').textContent = e.message; return; }
-  try { await navigator.wakeLock?.request('screen'); } catch {}
   if (!ws) connect(); else ws.send(JSON.stringify({ t: 'join', code, id }));
+  try { await startSensors(); } catch (e) { $('raw').textContent = e.message + ' Drag the yellow dot instead.'; }
+  try { await navigator.wakeLock?.request('screen'); } catch {}
 };
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
 </script>
