@@ -29,6 +29,7 @@ npm start
 
 **Bonus items done:**
 - Local multiplayer: up to 8 phones, each with its own colored ball, racing in one maze
+- Leaderboard: each phone enters a name, and the best finish time per name is ranked and saved to `leaderboard.json`, so it survives restarts. The game shows the top 10, and the phone shows your time, your rank and whether it's a new personal best.
 - On-screen JUMP button
 - Vibration feedback: a bump scaled to impact speed when you hit a wall, a double buzz when you fall into a hole, and a pattern when you finish
 - Live latency display on both the phone and the game

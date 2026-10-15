@@ -36,6 +36,10 @@
     <div id="players"><div class="muted">No phones yet. Arrow keys + space also work for testing.</div></div>
   </div>
   <button id="restart">Restart race</button>
+  <div>
+    <div style="font-weight:600;margin-bottom:6px">🏆 Leaderboard <span class="muted" style="font-weight:400">best times</span></div>
+    <div id="board"><div class="muted">No finishes yet. Reach the 🏁!</div></div>
+  </div>
   <div class="muted">Latency = phone→game→phone round trip / 2, measured every second.</div>
 </div>
 <main><canvas id="c"></canvas><div id="banner"></div></main>
@@ -90,6 +94,7 @@ function connect() {
     else if (m.t === 's') { const p = getPlayer(m.id); p.tx = m.x; p.ty = m.y; if (m.r != null) p.rtt = m.r; p.on = true; }
     else if (m.t === 'jump') jump(getPlayer(m.id));
     else if (m.t === 'ping') out({ t: 'pong', to: m.id, ts: m.ts });
+    else if (m.t === 'leaderboard') renderBoard(m.list);
   };
 }
 const out = m => ws && ws.readyState === 1 && ws.send(JSON.stringify(m));
@@ -106,11 +111,16 @@ async function showPairing() {
   const q = document.getElementById('qr'); q.innerHTML = '';
   if (window.QRCode) new QRCode(q, { text: url, width: 180, height: 180 });
 }
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+function renderBoard(list) {
+  if (!list.length) return;
+  document.getElementById('board').innerHTML = list.map((e, i) => `<div class="p"><span>${['🥇', '🥈', '🥉'][i] || (i + 1) + '.'} ${esc(e.name)}</span><span>${(e.ms / 1000).toFixed(2)}s</span></div>`).join('');
+}
 function renderPlayers() {
   const el = document.getElementById('players');
   const list = [...players.values()];
   if (!list.length) return;
-  el.innerHTML = list.map(p => `<div class="p"><span><span class="dot" style="background:${p.color}"></span>${p.name}${p.on ? '' : ' <span class="muted">(offline)</span>'}</span>
+  el.innerHTML = list.map(p => `<div class="p"><span><span class="dot" style="background:${p.color}"></span>${esc(p.name)}${p.on ? '' : ' <span class="muted">(offline)</span>'}</span>
     <span class="muted">${p.finished ? (p.finished / 1000).toFixed(1) + 's 🏁' : p.rtt != null ? Math.round(p.rtt / 2) + ' ms' : ''} ${p.falls ? '· ' + p.falls + ' falls' : ''}</span></div>`).join('');
 }
 setInterval(renderPlayers, 500);
@@ -159,7 +169,7 @@ function step(p, dt, now) {
   if (hit > 2.5 && now - p.lastBuzz > 150) { p.lastBuzz = now; buzz(p, Math.min(60, hit * 8)); }
   const t = tile(Math.floor(p.x), Math.floor(p.y));
   if (t === 'o' && now > p.jumpUntil) { p.falls++; spawn(p); buzz(p, [200, 80, 200]); }
-  if (t === 'G') { p.finished = now - raceStart; buzz(p, [60, 40, 60, 40, 300]); banner(`${p.name} finished in ${(p.finished / 1000).toFixed(1)}s!`); }
+  if (t === 'G') { p.finished = now - raceStart; out({ t: 'finish', id: p.id, ms: p.finished }); buzz(p, [60, 40, 60, 40, 300]); banner(`${p.name} finished in ${(p.finished / 1000).toFixed(1)}s!`); }
 }
 
 // ---------- render

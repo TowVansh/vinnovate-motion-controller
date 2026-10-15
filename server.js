@@ -48,6 +48,22 @@ const rooms = new Map(); // code -> { host, pads: Map(id -> ws), colors: Map(id 
 const COLORS = ['#facc15', '#38bdf8', '#f472b6', '#4ade80', '#fb923c', '#a78bfa', '#f87171', '#2dd4bf'];
 const send = (ws, msg) => ws && ws.readyState === 1 && ws.send(JSON.stringify(msg));
 
+// ---- leaderboard: best finish time per player name, kept across restarts
+const LB_FILE = process.env.LEADERBOARD_FILE || path.join(__dirname, 'leaderboard.json');
+let leaderboard = [];
+try { leaderboard = JSON.parse(fs.readFileSync(LB_FILE, 'utf8')); } catch {}
+function recordFinish(name, ms) {
+  const prev = leaderboard.find(e => e.name === name);
+  const improved = !prev || ms < prev.ms;
+  if (!prev) leaderboard.push({ name, ms, at: Date.now() });
+  else if (improved) Object.assign(prev, { ms, at: Date.now() });
+  leaderboard.sort((a, b) => a.ms - b.ms);
+  leaderboard = leaderboard.slice(0, 50);
+  fs.writeFile(LB_FILE, JSON.stringify(leaderboard, null, 1), () => {});
+  return { rank: leaderboard.findIndex(e => e.name === name) + 1, best: leaderboard.find(e => e.name === name).ms, improved };
+}
+const cleanName = s => String(s || '').replace(/[<>&"'\u0000-\u001f]/g, '').trim().slice(0, 16);
+
 function newCode() {
   let c;
   do c = Array.from({ length: 4 }, () => 'ABCDEFGHJKLMNPQRSTUVWXYZ'[Math.random() * 24 | 0]).join('');
@@ -67,11 +83,12 @@ wss.on('connection', ws => {
     if (m.t === 'host') { // game opens (or reconnects to) a room
       // a reloaded game (or a restarted server) keeps its code, so phones that already scanned still match
       let code = /^[A-Z]{4}$/.test(m.code || '') ? m.code : newCode();
-      if (!rooms.has(code)) rooms.set(code, { pads: new Map(), colors: new Map() });
+      if (!rooms.has(code)) rooms.set(code, { pads: new Map(), colors: new Map(), names: new Map() });
       const r = rooms.get(code);
       r.host = ws; ws.room = code; ws.role = 'host';
       send(ws, { t: 'room', code });
-      for (const [id] of r.pads) send(ws, { t: 'player', id, color: r.colors.get(id), on: true });
+      for (const [id] of r.pads) send(ws, { t: 'player', id, name: r.names.get(id), color: r.colors.get(id), on: true });
+      send(ws, { t: 'leaderboard', list: leaderboard.slice(0, 10) });
       for (const p of r.pads.values()) send(p, { t: 'host', on: true });
       return;
     }
@@ -85,14 +102,23 @@ wss.on('connection', ws => {
       if (old && old !== ws) old.close();
       if (!r.colors.has(m.id)) r.colors.set(m.id, COLORS[r.colors.size % COLORS.length]);
       r.pads.set(m.id, ws);
+      r.names.set(m.id, cleanName(m.name) || `Player ${r.colors.size}`);
       ws.room = code; ws.role = 'pad'; ws.id = m.id;
       console.log(`pad ${m.id.slice(0, 8)} joined ${code}`);
       send(ws, { t: 'joined', color: r.colors.get(m.id), host: !!(r.host && r.host.readyState === 1) });
-      send(r.host, { t: 'player', id: m.id, name: m.name, color: r.colors.get(m.id), on: true });
+      send(r.host, { t: 'player', id: m.id, name: r.names.get(m.id), color: r.colors.get(m.id), on: true });
       return;
     }
     if (!room) return;
     if (ws.role === 'pad') { m.id = ws.id; send(room.host, m); }          // sensor data, jumps, pings: pad -> game
+    else if (ws.role === 'host' && m.t === 'finish') {                      // the game reports a finish; server keeps the board
+      const ms = Math.round(Number(m.ms));
+      const name = m.id === 'kb' ? 'Keyboard' : room.names.get(m.id);
+      if (!name || !(ms > 1000 && ms < 3600000)) return;
+      const res = recordFinish(name, ms);
+      send(ws, { t: 'leaderboard', list: leaderboard.slice(0, 10) });
+      send(room.pads.get(m.id), { t: 'result', ms, ...res });
+    }
     else if (ws.role === 'host') {                                         // haptics, pongs: game -> one pad or all
       if (m.to) send(room.pads.get(m.to), m);
       else for (const p of room.pads.values()) send(p, m);

@@ -37,6 +37,8 @@
     <li>Tap <b>START</b> (allow motion access if asked)</li>
     <li>Hold the phone flat and tilt it to roll your ball</li>
   </ol>
+  <label class="muted" for="nameIn">Your name (for the leaderboard)</label>
+  <input id="nameIn" maxlength="16" placeholder="Name" autocomplete="off" style="letter-spacing:0;text-transform:none;font-size:22px">
   <label class="muted" for="codeIn">Game code</label>
   <input id="codeIn" maxlength="4" placeholder="CODE" autocomplete="off">
   <button class="primary" id="go" style="font-size:24px;padding:20px">▶ START</button>
@@ -65,6 +67,7 @@ window.onunhandledrejection = function (e) { report('rejection: ' + (e.reason &&
 const $ = id => document.getElementById(id);
 const params = new URLSearchParams(location.search);
 $('codeIn').value = params.get('room') || localStorage.getItem('code') || '';
+$('nameIn').value = localStorage.getItem('name') || '';
 let id = localStorage.getItem('padId');
 if (!id) { id = crypto.randomUUID ? crypto.randomUUID() : String(Math.random()).slice(2); localStorage.setItem('padId', id); }
 
@@ -84,7 +87,7 @@ function onMotion(e) {
   const mag = a ? Math.hypot(a.x, a.y, a.z) : Math.abs(Math.hypot(e.accelerationIncludingGravity.x, e.accelerationIncludingGravity.y, e.accelerationIncludingGravity.z) - 9.81);
   if (mag > 14 && performance.now() - lastShake > 700) { lastShake = performance.now(); doJump(); }
 }
-let sensorEvents = 0;
+let sensorEvents = 0, resultUntil = 0;
 async function startSensors() {
   if (!window.isSecureContext) throw new Error('Motion sensors need HTTPS. Open the https:// link.');
   // iOS: both prompts must start inside the same tap, so request them together, not one after another
@@ -115,7 +118,7 @@ let ws, code, retry = 300, rtt = null, hostOn = false;
 function connect() {
   ws = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host);
   setState('connecting…', '#facc15');
-  ws.onopen = () => { retry = 300; report('socket open, joining ' + code); ws.send(JSON.stringify({ t: 'join', code, id, name: (navigator.userAgentData && navigator.userAgentData.platform) || 'phone' })); };
+  ws.onopen = () => { retry = 300; report('socket open, joining ' + code); ws.send(JSON.stringify({ t: 'join', code, id, name: localStorage.getItem('name') || '' })); };
   ws.onclose = () => { setState('reconnecting…', 'var(--bad)'); setTimeout(connect, retry); retry = Math.min(retry * 2, 4000); };
   ws.onmessage = e => {
     const m = JSON.parse(e.data);
@@ -124,6 +127,10 @@ function connect() {
     else if (m.t === 'host') { hostOn = m.on; setState(m.on ? 'connected to game' : 'game disconnected', m.on ? 'var(--ok)' : 'var(--bad)'); }
     else if (m.t === 'pong') { rtt = performance.now() - m.ts; $('lat').textContent = `${Math.round(rtt / 2)} ms`; }
     else if (m.t === 'fx' && m.vibrate) vibrate(m.vibrate);
+    else if (m.t === 'result') {
+      resultUntil = performance.now() + 5000; // keep the result on screen for 5 s
+      $('raw').textContent = `🏁 Finished in ${(m.ms / 1000).toFixed(2)}s · ${m.improved ? 'new personal best · ' : ''}#${m.rank} on the leaderboard`;
+    }
   };
 }
 const out = m => ws && ws.readyState === 1 && ws.send(JSON.stringify(m));
@@ -140,13 +147,16 @@ setInterval(() => {
     out({ t: 's', x, y, r: rtt == null ? null : Math.round(rtt) }); sent = { x, y }; lastSend = now;
   }
   $('knob').style.left = `${50 + x * 42}%`; $('knob').style.top = `${50 + y * 42}%`;
-  if (sensorEvents) $('raw').textContent = `tilt ${gamma.toFixed(0)}°, ${beta.toFixed(0)}°  →  ${x.toFixed(2)}, ${y.toFixed(2)}`;
+  if (sensorEvents && performance.now() > resultUntil) $('raw').textContent = `tilt ${gamma.toFixed(0)}°, ${beta.toFixed(0)}°  →  ${x.toFixed(2)}, ${y.toFixed(2)}`;
 }, 16);
 setInterval(() => out({ t: 'ping', ts: performance.now() }), 1000);
 
 $('go').onclick = async () => {
   report('connect tapped');
   code = $('codeIn').value.trim().toUpperCase();
+  const name = $('nameIn').value.trim();
+  if (!name) return ($('err').textContent = 'Type your name for the leaderboard');
+  localStorage.setItem('name', name);
   if (code.length !== 4) return ($('err').textContent = 'Type the 4-letter code shown on the laptop screen');
   localStorage.setItem('code', code);
   $('go').textContent = 'Connecting…';
