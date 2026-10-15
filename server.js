@@ -45,18 +45,21 @@ function serve(req, res) {
 
 // ---- rooms: one host (game) and up to 8 pads (phones) each
 const rooms = new Map(); // code -> { host, pads: Map(id -> ws), colors: Map(id -> color) }
-const COLORS = ['#facc15', '#38bdf8', '#f472b6', '#4ade80', '#fb923c', '#a78bfa', '#f87171', '#2dd4bf'];
-const send = (ws, msg) => ws && ws.readyState === 1 && ws.send(JSON.stringify(msg));
+const COLORS = ['#f472b6', '#4ade80', '#fb923c', '#a78bfa', '#f87171', '#2dd4bf', '#e879f9', '#a3e635']; // no yellow/blue: those are the ghosts
+const send = (ws, msg) => msg && ws && ws.readyState === 1 && ws.send(JSON.stringify(msg));
 
 // ---- leaderboard: best finish time per player name, kept across restarts
 const LB_FILE = process.env.LEADERBOARD_FILE || path.join(__dirname, 'leaderboard.json');
 let leaderboard = [];
 try { leaderboard = JSON.parse(fs.readFileSync(LB_FILE, 'utf8')); } catch {}
-function recordFinish(name, ms) {
+const boardView = () => leaderboard.slice(0, 10).map(({ name, ms }) => ({ name, ms }));
+const ghostOf = (e, kind) => e && e.path && { t: 'ghost', kind, name: e.name, ms: e.ms, path: e.path };
+const validPath = p => Array.isArray(p) && p.length > 1 && p.length <= 20000 && p.every(q => Array.isArray(q) && q.length === 2 && q.every(Number.isFinite)) ? p : null;
+function recordFinish(name, ms, path) {
   const prev = leaderboard.find(e => e.name === name);
   const improved = !prev || ms < prev.ms;
-  if (!prev) leaderboard.push({ name, ms, at: Date.now() });
-  else if (improved) Object.assign(prev, { ms, at: Date.now() });
+  if (!prev) leaderboard.push({ name, ms, at: Date.now(), path });
+  else if (improved) Object.assign(prev, { ms, at: Date.now(), path });
   leaderboard.sort((a, b) => a.ms - b.ms);
   leaderboard = leaderboard.slice(0, 50);
   fs.writeFile(LB_FILE, JSON.stringify(leaderboard, null, 1), () => {});
@@ -88,8 +91,10 @@ wss.on('connection', ws => {
       r.host = ws; ws.room = code; ws.role = 'host';
       send(ws, { t: 'room', code });
       for (const [id] of r.pads) send(ws, { t: 'player', id, name: r.names.get(id), color: r.colors.get(id), on: true });
-      send(ws, { t: 'leaderboard', list: leaderboard.slice(0, 10) });
+      send(ws, { t: 'leaderboard', list: boardView() });
       for (const p of r.pads.values()) send(p, { t: 'host', on: true });
+      send(ws, ghostOf(leaderboard[0], 'top'));
+      for (const [id] of r.pads) send(ws, ghostOf(leaderboard.find(e => e.name === r.names.get(id)), 'pb'));
       return;
     }
     if (m.t === 'join') { // phone joins with a stable id so a reconnect keeps its ball and color
@@ -107,6 +112,7 @@ wss.on('connection', ws => {
       console.log(`pad ${m.id.slice(0, 8)} joined ${code}`);
       send(ws, { t: 'joined', color: r.colors.get(m.id), host: !!(r.host && r.host.readyState === 1) });
       send(r.host, { t: 'player', id: m.id, name: r.names.get(m.id), color: r.colors.get(m.id), on: true });
+      send(r.host, ghostOf(leaderboard.find(e => e.name === r.names.get(m.id)), 'pb'));
       return;
     }
     if (!room) return;
@@ -115,8 +121,10 @@ wss.on('connection', ws => {
       const ms = Math.round(Number(m.ms));
       const name = m.id === 'kb' ? 'Keyboard' : room.names.get(m.id);
       if (!name || !(ms > 1000 && ms < 3600000)) return;
-      const res = recordFinish(name, ms);
-      send(ws, { t: 'leaderboard', list: leaderboard.slice(0, 10) });
+      const res = recordFinish(name, ms, validPath(m.path));
+      send(ws, { t: 'leaderboard', list: boardView() });
+      if (res.improved) send(ws, ghostOf(leaderboard.find(e => e.name === name), 'pb'));
+      if (res.improved && res.rank === 1) send(ws, ghostOf(leaderboard[0], 'top'));
       send(room.pads.get(m.id), { t: 'result', ms, ...res });
     }
     else if (ws.role === 'host') {                                         // haptics, pongs: game -> one pad or all
@@ -162,3 +170,4 @@ if (!CLOUD) {
   attach(secure);
   secure.listen(HTTPS_PORT, () => console.log(`phone: https://${lanIp()}:${HTTPS_PORT}/pad.html  (accept the certificate warning once)`));
 }
+module.exports = { rooms };

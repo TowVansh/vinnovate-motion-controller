@@ -25,7 +25,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
   assert.match(code, /^[A-Z]{4}$/);
 
   const pad = await open();
-  pad.send(JSON.stringify({ t: 'join', code, id: 'phone-1', name: 'Tester' }));
+  pad.send(JSON.stringify({ t: 'join', code, id: 'phone-1', name: 'T' + Date.now() % 1e6 }));
   const joined = await next(pad, 'joined');
   assert(joined.host && joined.color);
   assert.equal((await next(host, 'player')).id, 'phone-1');
@@ -52,10 +52,13 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
   assert.equal((await next(pad, 'fx')).vibrate, 50);
 
   // leaderboard: game reports a finish, server ranks it and tells the phone
-  host.send(JSON.stringify({ t: 'finish', id: 'phone-1', ms: 23456 }));
+  const pbGhost = next(host, 'ghost');
+  host.send(JSON.stringify({ t: 'finish', id: 'phone-1', ms: 23456, path: [[1.5, 1.5], [2, 1.5], [3, 1.6]] }));
   const board = await next(host, 'leaderboard');
   assert(board.list.some(e => e.ms === 23456));
   const result = await next(pad, 'result');
+  const gh = await pbGhost;
+  assert.equal(gh.path.length, 3);
   assert(result.rank >= 1 && result.ms === 23456);
 
   // pad reconnect keeps its color; host sees offline then online

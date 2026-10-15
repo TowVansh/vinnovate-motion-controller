@@ -50,7 +50,7 @@
   <div class="muted" id="lat">– ms</div>
 </div>
 <div class="muted" style="text-align:center">Tilt the phone to roll your ball &middot; shake or press JUMP to hop over holes</div>
-<div id="pad"><div id="knob"></div><div class="muted" style="position:absolute;bottom:8px;width:100%;text-align:center;font-size:12px">this dot shows your tilt &middot; you can also drag it</div></div>
+<div id="pad"><div id="count" style="position:absolute;inset:0;display:none;align-items:center;justify-content:center;font:800 120px system-ui;color:#fff;z-index:2;background:#0008"></div><div id="knob"></div><div class="muted" style="position:absolute;bottom:8px;width:100%;text-align:center;font-size:12px">this dot shows your tilt &middot; you can also drag it</div></div>
 <div class="muted" id="raw">tilt 0, 0</div>
 <div class="btns"><button id="cal">Set level<br><span style="font-size:12px;font-weight:400">hold still, tap</span></button><button id="jump" class="primary">JUMP</button></div>
 
@@ -126,7 +126,13 @@ function connect() {
     else if (m.t === 'error') { $('go').textContent = '▶ START'; $('err').textContent = m.msg; $('start').style.display = 'flex'; ws.onclose = null; ws.close(); }
     else if (m.t === 'host') { hostOn = m.on; setState(m.on ? 'connected to game' : 'game disconnected', m.on ? 'var(--ok)' : 'var(--bad)'); }
     else if (m.t === 'pong') { rtt = performance.now() - m.ts; $('lat').textContent = `${Math.round(rtt / 2)} ms`; }
-    else if (m.t === 'fx' && m.vibrate) vibrate(m.vibrate);
+    else if (m.t === 'fx') {
+      if (m.vibrate) vibrate(m.vibrate);
+      if (m.count != null) { // 3-2-1-GO from the game
+        const c = $('count'); c.textContent = m.count || 'GO!'; c.style.display = 'flex';
+        clearTimeout(c.t); c.t = setTimeout(() => (c.style.display = 'none'), m.count ? 1100 : 600);
+      }
+    }
     else if (m.t === 'result') {
       resultUntil = performance.now() + 5000; // keep the result on screen for 5 s
       $('raw').textContent = `🏁 Finished in ${(m.ms / 1000).toFixed(2)}s · ${m.improved ? 'new personal best · ' : ''}#${m.rank} on the leaderboard`;

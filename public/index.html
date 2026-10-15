@@ -59,6 +59,7 @@ const MAZE = [
   '####################',
 ];
 const ROWS = MAZE.length, COLS = MAZE[0].length, R = 0.3, ACC = 14, FRICTION = 1.6, JUMP_MS = 650;
+const COUNT_MS = 3000, SAMPLE_MS = 50; // 3-2-1 countdown; ghost path sampled at 20 Hz
 const tile = (x, y) => (MAZE[y] || '')[x] || '#';
 let START, GOAL;
 MAZE.forEach((row, y) => [...row].forEach((ch, x) => { if (ch === 'S') START = { x: x + .5, y: y + .5 }; if (ch === 'G') GOAL = { x, y }; }));
@@ -74,11 +75,21 @@ addEventListener('resize', resize); resize();
 
 // ---------- players
 const players = new Map(); // id -> state
-let raceStart = performance.now();
-function spawn(p) { Object.assign(p, { x: START.x, y: START.y, vx: 0, vy: 0, finished: null, falls: p.falls || 0 }); }
+// every run is independent: its own clock, its own recorded path. A fall just starts a fresh run.
+function spawn(p, countdown) {
+  const now = performance.now(), go = countdown ? now + COUNT_MS : now;
+  Object.assign(p, { x: START.x, y: START.y, vx: 0, vy: 0, finished: null, countdownUntil: go, runStart: go, path: [], lastCount: null });
+}
 function getPlayer(id, color = '#fff', name) {
-  if (!players.has(id)) { const p = { id, color, name: name || id.slice(0, 4), tx: 0, ty: 0, jumpUntil: 0, on: true, rtt: null, lastBuzz: 0 }; spawn(p); players.set(id, p); }
+  if (!players.has(id)) { const p = { id, color, name: name || id.slice(0, 4), tx: 0, ty: 0, jumpUntil: 0, on: true, rtt: null, lastBuzz: 0, runs: 0 }; spawn(p, true); players.set(id, p); }
   return players.get(id);
+}
+
+// ---------- ghosts: yellow = #1 on the leaderboard, blue = this player's own best
+const ghosts = { top: null, pb: new Map() }; // pb: name -> { ms, path }
+function ghostAt(path, elapsed) {
+  const f = Math.max(0, elapsed) / SAMPLE_MS, i = Math.min(path.length - 1, Math.floor(f)), j = Math.min(path.length - 1, i + 1), k = f - Math.floor(f);
+  return [path[i][0] + (path[j][0] - path[i][0]) * k, path[i][1] + (path[j][1] - path[i][1]) * k];
 }
 
 // ---------- network (auto-reconnect, keeps the same room code)
@@ -95,6 +106,9 @@ function connect() {
     else if (m.t === 'jump') jump(getPlayer(m.id));
     else if (m.t === 'ping') out({ t: 'pong', to: m.id, ts: m.ts });
     else if (m.t === 'leaderboard') renderBoard(m.list);
+    else if (m.t === 'ghost' && Array.isArray(m.path) && m.path.length) {
+      if (m.kind === 'top') ghosts.top = m; else ghosts.pb.set(m.name, m);
+    }
   };
 }
 const out = m => ws && ws.readyState === 1 && ws.send(JSON.stringify(m));
@@ -121,9 +135,15 @@ function renderPlayers() {
   const list = [...players.values()];
   if (!list.length) return;
   el.innerHTML = list.map(p => `<div class="p"><span><span class="dot" style="background:${p.color}"></span>${esc(p.name)}${p.on ? '' : ' <span class="muted">(offline)</span>'}</span>
-    <span class="muted">${p.finished ? (p.finished / 1000).toFixed(1) + 's 🏁' : p.rtt != null ? Math.round(p.rtt / 2) + ' ms' : ''} ${p.falls ? '· ' + p.falls + ' falls' : ''}</span></div>`).join('');
+    <span class="muted">${runText(p)}${p.rtt != null ? ' · ' + Math.round(p.rtt / 2) + ' ms' : ''}</span></div>`).join('');
 }
-setInterval(renderPlayers, 500);
+function runText(p) {
+  const now = performance.now();
+  if (p.finished) return `🏁 ${(p.finished / 1000).toFixed(2)}s`;
+  if (now < p.countdownUntil) return 'get ready…';
+  return `⏱ ${((now - p.runStart) / 1000).toFixed(1)}s`;
+}
+setInterval(renderPlayers, 200);
 connect();
 
 // ---------- keyboard player for testing without a phone
@@ -133,12 +153,7 @@ addEventListener('keyup', e => keys[e.key] = false);
 
 function jump(p) { if (performance.now() > p.jumpUntil) p.jumpUntil = performance.now() + JUMP_MS; }
 
-document.getElementById('restart').onclick = () => {
-  raceStart = performance.now();
-  players.forEach(spawn);
-  out({ t: 'fx', vibrate: [80, 60, 80] });
-  banner('Go!');
-};
+document.getElementById('restart').onclick = () => players.forEach(p => spawn(p, true));
 let bannerTimer;
 function banner(text) { const b = document.getElementById('banner'); b.textContent = text; b.style.display = 'block'; clearTimeout(bannerTimer); bannerTimer = setTimeout(() => b.style.display = 'none', 2000); }
 
@@ -160,6 +175,12 @@ function collide(p) {
 }
 function step(p, dt, now) {
   if (p.finished) return;
+  if (now < p.countdownUntil) { // frozen on the start tile; tell the phone each number of the 3-2-1
+    const n = Math.ceil((p.countdownUntil - now) / 1000);
+    if (n !== p.lastCount) { p.lastCount = n; out({ t: 'fx', to: p.id, vibrate: 40, count: n }); }
+    return;
+  }
+  if (p.lastCount !== 0) { p.lastCount = 0; out({ t: 'fx', to: p.id, vibrate: 120, count: 0 }); }
   if (p.id === 'kb') { p.tx = (keys.ArrowRight ? 1 : 0) - (keys.ArrowLeft ? 1 : 0); p.ty = (keys.ArrowDown ? 1 : 0) - (keys.ArrowUp ? 1 : 0); }
   p.vx += p.tx * ACC * dt; p.vy += p.ty * ACC * dt;
   const f = Math.max(0, 1 - FRICTION * dt); p.vx *= f; p.vy *= f;
@@ -167,9 +188,16 @@ function step(p, dt, now) {
   let hit = 0;
   for (let i = 0; i < n; i++) { p.x += p.vx * dt / n; p.y += p.vy * dt / n; hit = Math.max(hit, collide(p)); }
   if (hit > 2.5 && now - p.lastBuzz > 150) { p.lastBuzz = now; buzz(p, Math.min(60, hit * 8)); }
+  while (now - p.runStart >= p.path.length * SAMPLE_MS) p.path.push([+p.x.toFixed(2), +p.y.toFixed(2)]);
   const t = tile(Math.floor(p.x), Math.floor(p.y));
-  if (t === 'o' && now > p.jumpUntil) { p.falls++; spawn(p); buzz(p, [200, 80, 200]); }
-  if (t === 'G') { p.finished = now - raceStart; out({ t: 'finish', id: p.id, ms: p.finished }); buzz(p, [60, 40, 60, 40, 300]); banner(`${p.name} finished in ${(p.finished / 1000).toFixed(1)}s!`); }
+  if (t === 'o' && now > p.jumpUntil) { p.runs++; spawn(p, false); buzz(p, [200, 80, 200]); banner(`${p.name} fell in! New run, clock reset`); }
+  if (t === 'G') {
+    p.finished = Math.round(now - p.runStart); p.runs++;
+    p.path.push([+p.x.toFixed(2), +p.y.toFixed(2)]);
+    out({ t: 'finish', id: p.id, ms: p.finished, path: p.path });
+    buzz(p, [60, 40, 60, 40, 300]); banner(`${p.name} finished in ${(p.finished / 1000).toFixed(2)}s!`);
+    setTimeout(() => players.get(p.id) === p && spawn(p, true), 3000); // next independent run
+  }
 }
 
 // ---------- render
@@ -181,6 +209,24 @@ function draw(now) {
     if (t === 'o') { g.fillStyle = '#000'; g.beginPath(); g.arc((x + .5) * T, (y + .5) * T, T * .38, 0, 7); g.fill(); }
     if (t === 'G') { g.fillStyle = '#4ade8055'; g.fillRect(x * T, y * T, T, T); g.fillStyle = '#4ade80'; g.font = `${T * .6}px sans-serif`; g.fillText('🏁', x * T + T * .15, y * T + T * .72); }
     if (t === 'S') { g.fillStyle = '#facc1533'; g.fillRect(x * T, y * T, T, T); }
+  }
+  // ghosts replay on each player's own run clock; the #1 ghost follows the first player still running
+  const ghost = (path, elapsed, color, label) => {
+    const [x, y] = ghostAt(path, elapsed);
+    g.globalAlpha = 0.45; g.fillStyle = color; g.beginPath(); g.arc(x * T, y * T, R * T, 0, 7); g.fill();
+    g.globalAlpha = 0.9; g.font = `${Math.max(10, T * .28)}px system-ui`; g.fillText(label, x * T - R * T, y * T - R * T - 4); g.globalAlpha = 1;
+  };
+  const running = [...players.values()].filter(p => p.on && !p.finished);
+  for (const p of running) {
+    const pb = ghosts.pb.get(p.name);
+    if (pb && !(ghosts.top && ghosts.top.name === p.name)) ghost(pb.path, now - p.runStart, '#3b82f6', `${p.name} best ${(pb.ms / 1000).toFixed(1)}s`);
+  }
+  if (ghosts.top && running.length) ghost(ghosts.top.path, now - running[0].runStart, '#facc15', `#1 ${ghosts.top.name} ${(ghosts.top.ms / 1000).toFixed(1)}s`);
+  const cd = Math.max(0, ...running.map(p => p.countdownUntil - now));
+  if (cd > 0) { // big 3-2-1 over the maze
+    g.fillStyle = '#000a'; g.fillRect(0, 0, cv.width, cv.height);
+    g.fillStyle = '#fff'; g.font = `700 ${T * 4}px system-ui`; g.textAlign = 'center'; g.textBaseline = 'middle';
+    g.fillText(Math.ceil(cd / 1000), cv.width / 2, cv.height / 2); g.textAlign = 'start'; g.textBaseline = 'alphabetic';
   }
   for (const p of players.values()) {
     const air = Math.max(0, p.jumpUntil - now) / JUMP_MS, lift = Math.sin(air * Math.PI) * 0.35;
