@@ -4,6 +4,8 @@ This project turns a phone into a real-time motion controller for a browser game
 
 **📱 Android app (APK): https://github.com/TowVansh/vinnovate-motion-controller/releases/download/v1.0.0/TiltPad.apk**
 
+**🎮 Live game: https://tilt-maze.onrender.com.** Open it on a laptop, then scan its QR code with the app. Any network works and nothing needs installing on the laptop. Relay latency through the live server, measured from India, is p50 46 ms and p95 50 ms. It runs on Render's free tier, so the first load after 15 idle minutes takes about 50 s.
+
 | Part | Folder | Tech |
 |---|---|---|
 | Phone app | `app/` | React Native (Expo SDK 58): `expo-sensors` DeviceMotion, `expo-camera` QR scanner, haptics, keep-awake |
