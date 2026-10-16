@@ -2,7 +2,7 @@
 // Pair by scanning the game's QR code (or typing server + code), then tilt to steer, shake or tap JUMP to hop.
 import { useEffect, useRef, useState } from 'react';
 import { StatusBar } from 'expo-status-bar';
-import { StyleSheet, Text, View, TextInput, Pressable, Vibration, KeyboardAvoidingView, Platform, PanResponder } from 'react-native';
+import { StyleSheet, Text, View, TextInput, Pressable, Vibration, KeyboardAvoidingView, Platform, PanResponder, Linking } from 'react-native';
 import { DeviceMotion } from 'expo-sensors';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { useKeepAwake } from 'expo-keep-awake';
@@ -44,6 +44,7 @@ export default function App() {
 
   const ws = useRef(null), retry = useRef(300), target = useRef(null), alive = useRef(false);
   const idRef = useRef(null), cal = useRef({ b: 0, g: 0 }), raw = useRef({ b: 0, g: 0 }), t = useRef({ x: 0, y: 0 });
+  const linkSub = useRef(null);
   const rtt = useRef(null), lastShake = useRef(0), dragging = useRef(false);
   useKeepAwake();
 
@@ -55,7 +56,17 @@ export default function App() {
       if (c) cal.current = JSON.parse(c);
       idRef.current = id || Math.random().toString(36).slice(2, 12);
       if (!id) AsyncStorage.setItem('id', idRef.current);
+      // opened from the game's QR link (phone camera -> https://tilt-maze.onrender.com/pad.html?room=...): join straight away
+      const openLink = url => {
+        const p = url && parsePairing(url);
+        if (!p) return;
+        setServer(p.ws); setCode(p.room);
+        if (n) start(p, n); else setErr('Type your name, then tap START');
+      };
+      openLink(await Linking.getInitialURL());
+      linkSub.current = Linking.addEventListener('url', ({ url }) => openLink(url));
     })();
+    return () => linkSub.current && linkSub.current.remove();
   }, []);
 
   const send = m => ws.current && ws.current.readyState === 1 && ws.current.send(JSON.stringify(m));
@@ -66,7 +77,7 @@ export default function App() {
     const sock = new WebSocket(url);
     ws.current = sock;
     setStatus({ text: 'connecting…', color: '#facc15' });
-    sock.onopen = () => { retry.current = 300; sock.send(JSON.stringify({ t: 'join', code: room, id: idRef.current, name })); };
+    sock.onopen = () => { retry.current = 300; sock.send(JSON.stringify({ t: 'join', code: room, id: idRef.current, name: target.current.who })); };
     sock.onclose = () => {
       if (!alive.current || ws.current !== sock) return;
       setStatus({ text: 'reconnecting…', color: '#f87171' });
@@ -90,14 +101,14 @@ export default function App() {
     };
   }
 
-  async function start(pairing) {
+  async function start(pairing, who = name) {
     setErr('');
-    if (!name.trim()) return setErr('Type your name for the leaderboard');
+    if (!who.trim()) return setErr('Type your name for the leaderboard');
     const p = pairing || (code.trim().length === 4 && server.trim() ? { room: code.trim().toUpperCase(), ws: wsFromServer(server) } : null);
     if (!p) return setErr('Scan the QR code on the laptop, or type the server address and the 4-letter code');
-    AsyncStorage.multiSet([['name', name.trim()], ['server', p.ws]]);
+    AsyncStorage.multiSet([['name', who.trim()], ['server', p.ws]]);
     setServer(p.ws); setCode(p.room);
-    target.current = { url: p.ws, room: p.room };
+    target.current = { url: p.ws, room: p.room, who: who.trim() };
     alive.current = true;
     if (ws.current) { ws.current.onclose = null; ws.current.close(); }
     connect();
@@ -162,7 +173,7 @@ export default function App() {
       if (p) start(p); else setErr(`That QR code is not a Tilt Maze game: ${String(data).slice(0, 80)}`);
     });
     try { await CameraView.launchScanner({ barcodeTypes: ['qr'] }); }
-    catch (e) { setScreen('scan'); } // system scanner failed to open: use the in-app camera
+    catch (e) { setErr(`Google scanner unavailable (${e && e.message}). Opening the in-app camera.`); setScreen('scan'); }
   }
 
   if (screen === 'scan') return <Scanner onCancel={() => setScreen('start')} onCode={p => { setScreen('start'); start(p); }} />;
@@ -178,6 +189,7 @@ export default function App() {
       <Pressable style={[s.btn, s.primary]} onPress={scanQr}>
         <Text style={s.btnTextDark}>📷  SCAN QR TO START</Text>
       </Pressable>
+      <Text style={s.muted}>Tip: you can also scan the laptop's QR code with your phone's normal camera app. It opens Tilt Pad and joins by itself.</Text>
       <Text style={[s.muted, { marginTop: 12 }]}>…or connect by hand</Text>
       <TextInput style={s.input} value={server} onChangeText={setServer} placeholder="Server, e.g. 192.168.137.1:5180" placeholderTextColor="#777" autoCapitalize="none" autoCorrect={false} />
       <TextInput style={[s.input, s.code]} value={code} onChangeText={v => setCode(v.toUpperCase())} placeholder="CODE" placeholderTextColor="#777" maxLength={4} autoCapitalize="characters" />

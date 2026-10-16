@@ -3,6 +3,7 @@ services:
     name: tilt-maze
     runtime: node
     plan: free
+    autoDeploy: true
     region: singapore
     buildCommand: npm install --omit=dev
     startCommand: node server.js

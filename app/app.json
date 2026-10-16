@@ -2,7 +2,8 @@
   "expo": {
     "name": "Tilt Pad",
     "slug": "tilt-pad",
-    "version": "1.0.2",
+    "scheme": "tiltpad",
+    "version": "1.0.3",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "dark",
@@ -13,7 +14,15 @@
     },
     "android": {
       "package": "com.towvansh.tiltpad",
-      "versionCode": 3,
+      "versionCode": 4,
+      "intentFilters": [
+        {
+          "action": "VIEW",
+          "autoVerify": true,
+          "data": [{ "scheme": "https", "host": "tilt-maze.onrender.com", "pathPrefix": "/pad.html" }],
+          "category": ["BROWSABLE", "DEFAULT"]
+        }
+      ],
       "permissions": ["android.permission.VIBRATE", "android.permission.CAMERA", "android.permission.INTERNET"],
       "adaptiveIcon": {
         "backgroundColor": "#14120f",
