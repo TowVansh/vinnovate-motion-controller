@@ -32,7 +32,11 @@ function serve(req, res) {
     res.writeHead(200, { 'content-type': 'application/json' });
     // opened through a tunnel/proxy (e.g. cloudflared): the phone uses that same public HTTPS origin
     const proxied = req.headers['cf-connecting-ip'] || req.headers['x-forwarded-for'];
-    return res.end(JSON.stringify({ padBase: process.env.PUBLIC_URL || (CLOUD || proxied ? '' : `https://${lanIp()}:${HTTPS_PORT}`) }));
+    const local = !(process.env.PUBLIC_URL || CLOUD || proxied);
+    return res.end(JSON.stringify({
+      padBase: process.env.PUBLIC_URL || (local ? `https://${lanIp()}:${HTTPS_PORT}` : ''),
+      wsUrl: local ? `ws://${lanIp()}:${HTTP_PORT}` : '', // native app: plain ws on the LAN, no certificate needed
+    }));
   }
   const file = path.join(PUBLIC, path.normalize(url.pathname === '/' ? '/index.html' : url.pathname));
   if (!file.startsWith(PUBLIC)) { res.writeHead(403); return res.end(); }

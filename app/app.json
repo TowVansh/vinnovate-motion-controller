@@ -1,0 +1,33 @@
+{
+  "expo": {
+    "name": "Tilt Pad",
+    "slug": "tilt-pad",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "dark",
+    "backgroundColor": "#14120f",
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.towvansh.tiltpad"
+    },
+    "android": {
+      "package": "com.towvansh.tiltpad",
+      "permissions": ["android.permission.VIBRATE", "android.permission.CAMERA", "android.permission.INTERNET"],
+      "adaptiveIcon": {
+        "backgroundColor": "#14120f",
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "backgroundImage": "./assets/android-icon-background.png",
+        "monochromeImage": "./assets/android-icon-monochrome.png"
+      }
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      ["expo-build-properties", { "android": { "usesCleartextTraffic": true } }],
+      ["expo-camera", { "cameraPermission": "Tilt Pad uses the camera to scan the game's QR code.", "barcodeScannerEnabled": true }],
+      ["expo-sensors", { "motionPermission": "Tilt Pad reads the motion sensors to steer the ball." }]
+    ]
+  }
+}

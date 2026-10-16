@@ -118,8 +118,8 @@ function setHost(on) {
   document.getElementById('hostState').textContent = on ? 'server connected' : 'reconnecting…';
 }
 async function showPairing() {
-  const { padBase } = await (await fetch('/config')).json();
-  const url = `${padBase || location.origin}/pad.html?room=${code}`;
+  const { padBase, wsUrl } = await (await fetch('/config')).json();
+  const url = `${padBase || location.origin}/pad.html?room=${code}${wsUrl ? '&ws=' + encodeURIComponent(wsUrl) : ''}`;
   document.getElementById('code').textContent = code;
   const a = document.getElementById('padLink'); a.href = a.textContent = url;
   const q = document.getElementById('qr'); q.innerHTML = '';
