@@ -148,6 +148,23 @@ export default function App() {
     t.current = { x: clamp((locationX / padSize.current.w - 0.5) * 2.4), y: clamp((locationY / padSize.current.h - 0.5) * 2.4) };
   }
 
+  // Android: Google's system code scanner (Play Services) is far more reliable than an in-app camera analyzer.
+  // Falls back to the in-app camera where it is not available (iOS, phones without Play Services).
+  const scanSub = useRef(null);
+  async function scanQr() {
+    setErr('');
+    if (!name.trim()) return setErr('Type your name for the leaderboard');
+    if (Platform.OS !== 'android' || !CameraView.isModernBarcodeScannerAvailable) return setScreen('scan');
+    if (scanSub.current) scanSub.current.remove();
+    scanSub.current = CameraView.onModernBarcodeScanned(({ data }) => {
+      scanSub.current && scanSub.current.remove(); scanSub.current = null;
+      const p = parsePairing(data);
+      if (p) start(p); else setErr(`That QR code is not a Tilt Maze game: ${String(data).slice(0, 80)}`);
+    });
+    try { await CameraView.launchScanner({ barcodeTypes: ['qr'] }); }
+    catch (e) { setScreen('scan'); } // system scanner failed to open: use the in-app camera
+  }
+
   if (screen === 'scan') return <Scanner onCancel={() => setScreen('start')} onCode={p => { setScreen('start'); start(p); }} />;
 
   if (screen === 'start') return (
@@ -158,7 +175,7 @@ export default function App() {
       <Text style={s.muted}>1. Type your name  2. Tap SCAN QR and point at the laptop  3. Tilt to roll your ball</Text>
       <Text style={s.label}>Your name (for the leaderboard)</Text>
       <TextInput style={s.input} value={name} onChangeText={setName} placeholder="Name" placeholderTextColor="#777" maxLength={16} />
-      <Pressable style={[s.btn, s.primary]} onPress={() => (name.trim() ? setScreen('scan') : setErr('Type your name for the leaderboard'))}>
+      <Pressable style={[s.btn, s.primary]} onPress={scanQr}>
         <Text style={s.btnTextDark}>📷  SCAN QR TO START</Text>
       </Pressable>
       <Text style={[s.muted, { marginTop: 12 }]}>…or connect by hand</Text>
