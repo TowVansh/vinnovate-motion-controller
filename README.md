@@ -2,19 +2,41 @@
 
 This project turns a phone into a real-time motion controller for a browser game on a laptop. You tilt the phone to roll a ball through a maze, and you shake it (or tap JUMP) to hop over holes. Up to 8 phones can join the same game and race each other.
 
+**📱 Android app (APK): https://github.com/TowVansh/vinnovate-motion-controller/releases/download/v1.0.0/TiltPad.apk**
+
+| Part | Folder | Tech |
+|---|---|---|
+| Phone app | `app/` | React Native (Expo SDK 58): `expo-sensors` DeviceMotion, `expo-camera` QR scanner, haptics, keep-awake |
+| Browser game | `public/index.html` | HTML canvas: maze physics, QR code, players, leaderboard, ghosts |
+| Server | `server.js` | Node.js + `ws`: room pairing and relay, leaderboard |
+
+## Setup
+
+**Game and server (laptop):**
 ```
 npm install
-npm start
+npm start            # Windows PowerShell: npm.cmd start, or node server.js
+```
+Open **http://localhost:5180** on the laptop. It shows a room code and a QR code.
+
+**Phone app:**
+1. Install `TiltPad.apk` from the link above. Allow "install unknown apps" for your browser when Android asks.
+2. Open **Tilt Pad**, type your name, tap **SCAN QR TO START** and point the camera at the laptop's QR code.
+3. Hold the phone flat, tap **Set level**, and tilt to roll your ball. Shake the phone or tap **JUMP** to hop over holes.
+
+The phone and the laptop must be on the same network. If campus Wi-Fi blocks device-to-device traffic, turn on the laptop's Mobile Hotspot and connect the phone to it.
+
+You can also type the server address (shown under the QR code, e.g. `192.168.137.1:5180`) and the 4-letter code by hand instead of scanning.
+
+**Build the APK yourself:**
+```
+cd app
+npm install
+npx expo prebuild -p android
+cd android && ./gradlew assembleRelease     # needs JDK 17+ and the Android SDK (ANDROID_HOME)
 ```
 
-1. On the laptop, open **http://localhost:5180**. It shows a room code and a QR code.
-2. On the phone (same Wi-Fi), scan the QR code. It opens `https://<laptop-ip>:5443/pad.html?room=CODE`.
-3. Accept the self-signed certificate warning once (phones only give motion sensors to HTTPS pages), then tap **Connect**.
-4. Hold the phone flat, tap **Calibrate**, and tilt to roll.
-
-**Campus Wi-Fi that blocks device-to-device traffic, or a phone on mobile data:** run `npm run share` instead. It opens a free Cloudflare quick tunnel (this needs [cloudflared](https://github.com/cloudflare/cloudflared/releases); set `CLOUDFLARED=C:\tools\cloudflared.exe` if it is not on PATH) and points the QR code at the public HTTPS link. That way there is no certificate warning and no shared network is needed. The laptop still opens `http://localhost:5180`, so only the phone's hop goes through the tunnel (roughly 50–150 ms instead of 5–30 ms on a LAN). On Windows, allow Node through the firewall when asked for LAN mode.
-
-**App build:** the phone side is an installable PWA (`manifest.json` and a service worker). In Chrome on Android, use *Add to Home screen* / *Install app* to get a standalone app icon with no browser bar.
+**No app installed?** The same controller also runs in a phone browser at `https://<laptop-ip>:5443/pad.html` (scan the QR code with the camera app). Accept the self-signed certificate warning once, since browsers only give motion sensors to HTTPS pages. `npm run share` instead opens a Cloudflare quick tunnel so the browser pad works from any network.
 
 ## Features
 
