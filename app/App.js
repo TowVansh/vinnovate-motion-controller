@@ -14,13 +14,18 @@ const clamp = v => Math.max(-1, Math.min(1, v));
 const toDeg = v => (Math.abs(v) > 2 * Math.PI ? v : (v * 180) / Math.PI); // rotation comes in radians on native
 
 // The QR holds the game's pad link: https://host/pad.html?room=CODE&ws=ws://lan-ip:port
+// Parsed by hand: React Native's URL/searchParams support is incomplete, so new URL() is not reliable on the phone.
 export function parsePairing(text) {
-  try {
-    const u = new URL(text);
-    const room = (u.searchParams.get('room') || '').toUpperCase();
-    const ws = u.searchParams.get('ws') || `${u.protocol === 'https:' ? 'wss' : 'ws'}://${u.host}`;
-    return room.length === 4 ? { room, ws } : null;
-  } catch { return null; }
+  const m = /^(https?):\/\/([^/?#]+)[^?#]*\?([^#]*)/i.exec(String(text).trim());
+  if (!m) return null;
+  const params = {};
+  for (const kv of m[3].split('&')) {
+    const i = kv.indexOf('=');
+    if (i > 0) params[kv.slice(0, i)] = decodeURIComponent(kv.slice(i + 1).replace(/\+/g, ' '));
+  }
+  const room = (params.room || '').toUpperCase();
+  const ws = params.ws || `${m[1].toLowerCase() === 'https' ? 'wss' : 'ws'}://${m[2]}`;
+  return /^[A-Z]{4}$/.test(room) ? { room, ws } : null;
 }
 const wsFromServer = s => (/^wss?:\/\//.test(s) ? s : `ws://${s.trim()}`);
 
@@ -206,7 +211,7 @@ function Scanner({ onCode, onCancel }) {
         onBarcodeScanned={({ data }) => {
           if (done.current) return;
           const p = parsePairing(data);
-          if (!p) return setMsg('That QR code is not a Tilt Maze game');
+          if (!p) return setMsg(`That QR code is not a Tilt Maze game:\n${String(data).slice(0, 80)}`);
           done.current = true; onCode(p);
         }} />
       <View style={s.scanBar}>

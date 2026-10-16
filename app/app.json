@@ -2,7 +2,7 @@
   "expo": {
     "name": "Tilt Pad",
     "slug": "tilt-pad",
-    "version": "1.0.0",
+    "version": "1.0.1",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "dark",
@@ -13,6 +13,7 @@
     },
     "android": {
       "package": "com.towvansh.tiltpad",
+      "versionCode": 2,
       "permissions": ["android.permission.VIBRATE", "android.permission.CAMERA", "android.permission.INTERNET"],
       "adaptiveIcon": {
         "backgroundColor": "#14120f",

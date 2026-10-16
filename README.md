@@ -2,7 +2,7 @@
 
 This project turns a phone into a real-time motion controller for a browser game on a laptop. You tilt the phone to roll a ball through a maze, and you shake it (or tap JUMP) to hop over holes. Up to 8 phones can join the same game and race each other.
 
-**📱 Android app (APK): https://github.com/TowVansh/vinnovate-motion-controller/releases/download/v1.0.0/TiltPad.apk**
+**📱 Android app (APK): https://github.com/TowVansh/vinnovate-motion-controller/releases/latest/download/TiltPad.apk**
 
 **🎮 Live game: https://tilt-maze.onrender.com.** Open it on a laptop, then scan its QR code with the app. Any network works and nothing needs installing on the laptop. Relay latency through the live server, measured from India, is p50 46 ms and p95 50 ms. It runs on Render's free tier, so the first load after 15 idle minutes takes about 50 s.
 
