@@ -31,7 +31,7 @@
   <div id="qr"></div>
   <div class="code" id="code">····</div>
   <a id="padLink" class="muted" target="_blank"></a>
-  <div class="muted" id="appInfo">Tilt Pad app: tap SCAN QR, or type the server and code.</div>
+  <div class="muted" id="appInfo">Tilt Pad app: type your name and this code, then START.</div>
   <div>
     <div class="muted" style="margin-bottom:6px">Players (tilt to roll, shake or tap Jump to hop holes)</div>
     <div id="players"><div class="muted">No phones yet. Arrow keys + space also work for testing.</div></div>
@@ -123,7 +123,7 @@ async function showPairing() {
   const url = `${padBase || location.origin}/pad.html?room=${code}${wsUrl ? '&ws=' + encodeURIComponent(wsUrl) : ''}`;
   document.getElementById('code').textContent = code;
   const a = document.getElementById('padLink'); a.href = a.textContent = url;
-  document.getElementById('appInfo').textContent = 'Tilt Pad app: tap SCAN QR, or type server ' + (wsUrl ? wsUrl.replace('ws://', '') : location.host) + ' and code ' + code;
+  document.getElementById('appInfo').textContent = 'Tilt Pad app: type your name and code ' + code + ', then START.' + (wsUrl ? ' Set the app\'s Server to ' + wsUrl.replace('ws://', '') + ' (this laptop).' : '');
   const q = document.getElementById('qr'); q.innerHTML = '';
   if (window.QRCode) new QRCode(q, { text: url, width: 180, height: 180 });
 }

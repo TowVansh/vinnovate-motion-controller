@@ -1,10 +1,9 @@
 // Tilt Pad: native phone controller (React Native + Expo) for the Tilt Maze browser game.
-// Pair by scanning the game's QR code (or typing server + code), then tilt to steer, shake or tap JUMP to hop.
+// Pair with the 4-letter room code shown by the game, then tilt to steer, shake or tap JUMP to hop.
 import { useEffect, useRef, useState } from 'react';
 import { StatusBar } from 'expo-status-bar';
 import { StyleSheet, Text, View, TextInput, Pressable, Vibration, KeyboardAvoidingView, Platform, PanResponder, Linking } from 'react-native';
 import { DeviceMotion } from 'expo-sensors';
-import { CameraView, useCameraPermissions } from 'expo-camera';
 import { useKeepAwake } from 'expo-keep-awake';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
@@ -27,14 +26,16 @@ export function parsePairing(text) {
   const ws = params.ws || `${m[1].toLowerCase() === 'https' ? 'wss' : 'ws'}://${m[2]}`;
   return /^[A-Z]{4}$/.test(room) ? { room, ws } : null;
 }
+const DEFAULT_SERVER = 'wss://tilt-maze.onrender.com'; // the live game; change it for a laptop on the LAN
 const wsFromServer = s => (/^wss?:\/\//.test(s) ? s : `ws://${s.trim()}`);
 
 export default function App() {
   const [screen, setScreen] = useState('start');
   const [name, setName] = useState('');
-  const [server, setServer] = useState('');
+  const [server, setServer] = useState(DEFAULT_SERVER);
   const [code, setCode] = useState('');
   const [err, setErr] = useState('');
+  const [showServer, setShowServer] = useState(false);
   const [status, setStatus] = useState({ text: 'offline', color: '#f87171' });
   const [latency, setLatency] = useState(null);
   const [tilt, setTilt] = useState({ x: 0, y: 0 });
@@ -52,7 +53,7 @@ export default function App() {
     (async () => {
       const [n, id, c, s] = await Promise.all(['name', 'id', 'cal', 'server'].map(k => AsyncStorage.getItem(k)));
       if (n) setName(n);
-      if (s) setServer(s);
+      if (s) { setServer(s); if (s !== DEFAULT_SERVER) setShowServer(true); }
       if (c) cal.current = JSON.parse(c);
       idRef.current = id || Math.random().toString(36).slice(2, 12);
       if (!id) AsyncStorage.setItem('id', idRef.current);
@@ -105,7 +106,7 @@ export default function App() {
     setErr('');
     if (!who.trim()) return setErr('Type your name for the leaderboard');
     const p = pairing || (code.trim().length === 4 && server.trim() ? { room: code.trim().toUpperCase(), ws: wsFromServer(server) } : null);
-    if (!p) return setErr('Scan the QR code on the laptop, or type the server address and the 4-letter code');
+    if (!p) return setErr('Type the 4-letter code shown on the game screen');
     AsyncStorage.multiSet([['name', who.trim()], ['server', p.ws]]);
     setServer(p.ws); setCode(p.room);
     target.current = { url: p.ws, room: p.room, who: who.trim() };
@@ -159,42 +160,23 @@ export default function App() {
     t.current = { x: clamp((locationX / padSize.current.w - 0.5) * 2.4), y: clamp((locationY / padSize.current.h - 0.5) * 2.4) };
   }
 
-  // Android: Google's system code scanner (Play Services) is far more reliable than an in-app camera analyzer.
-  // Falls back to the in-app camera where it is not available (iOS, phones without Play Services).
-  const scanSub = useRef(null);
-  async function scanQr() {
-    setErr('');
-    if (!name.trim()) return setErr('Type your name for the leaderboard');
-    if (Platform.OS !== 'android' || !CameraView.isModernBarcodeScannerAvailable) return setScreen('scan');
-    if (scanSub.current) scanSub.current.remove();
-    scanSub.current = CameraView.onModernBarcodeScanned(({ data }) => {
-      scanSub.current && scanSub.current.remove(); scanSub.current = null;
-      const p = parsePairing(data);
-      if (p) start(p); else setErr(`That QR code is not a Tilt Maze game: ${String(data).slice(0, 80)}`);
-    });
-    try { await CameraView.launchScanner({ barcodeTypes: ['qr'] }); }
-    catch (e) { setErr(`Google scanner unavailable (${e && e.message}). Opening the in-app camera.`); setScreen('scan'); }
-  }
-
-  if (screen === 'scan') return <Scanner onCancel={() => setScreen('start')} onCode={p => { setScreen('start'); start(p); }} />;
-
   if (screen === 'start') return (
     <KeyboardAvoidingView style={s.root} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <StatusBar style="light" />
       <Text style={s.h1}>Tilt Pad</Text>
-      <Text style={s.muted}>Your phone becomes the controller for the Tilt Maze game on the laptop.</Text>
-      <Text style={s.muted}>1. Type your name  2. Tap SCAN QR and point at the laptop  3. Tilt to roll your ball</Text>
+      <Text style={s.muted}>Your phone becomes the controller for the Tilt Maze game.</Text>
+      <Text style={s.muted}>1. Open the game on a laptop  2. Type your name and the 4-letter code it shows  3. Tap START and tilt to roll</Text>
       <Text style={s.label}>Your name (for the leaderboard)</Text>
       <TextInput style={s.input} value={name} onChangeText={setName} placeholder="Name" placeholderTextColor="#777" maxLength={16} />
-      <Pressable style={[s.btn, s.primary]} onPress={scanQr}>
-        <Text style={s.btnTextDark}>📷  SCAN QR TO START</Text>
-      </Pressable>
-      <Text style={s.muted}>Tip: you can also scan the laptop's QR code with your phone's normal camera app. It opens Tilt Pad and joins by itself.</Text>
-      <Text style={[s.muted, { marginTop: 12 }]}>…or connect by hand</Text>
-      <TextInput style={s.input} value={server} onChangeText={setServer} placeholder="Server, e.g. 192.168.137.1:5180" placeholderTextColor="#777" autoCapitalize="none" autoCorrect={false} />
-      <TextInput style={[s.input, s.code]} value={code} onChangeText={v => setCode(v.toUpperCase())} placeholder="CODE" placeholderTextColor="#777" maxLength={4} autoCapitalize="characters" />
-      <Pressable style={s.btn} onPress={() => start()}><Text style={s.btnText}>▶ START</Text></Pressable>
+      <Text style={s.label}>Game code</Text>
+      <TextInput style={[s.input, s.code]} value={code} onChangeText={v => setCode(v.toUpperCase())} placeholder="CODE" placeholderTextColor="#777" maxLength={4} autoCapitalize="characters" autoCorrect={false} />
+      <Pressable style={[s.btn, s.primary]} onPress={() => start()}><Text style={[s.btnTextDark, { fontSize: 24 }]}>▶ START</Text></Pressable>
       {!!err && <Text style={s.err}>{err}</Text>}
+      <Pressable onPress={() => setShowServer(v => !v)}><Text style={[s.muted, { marginTop: 16 }]}>{showServer ? '▾' : '▸'} Server (only change this for a game running on your own laptop)</Text></Pressable>
+      {showServer && <>
+        <TextInput style={s.input} value={server} onChangeText={setServer} placeholder="e.g. 192.168.137.1:5180" placeholderTextColor="#777" autoCapitalize="none" autoCorrect={false} />
+        <Pressable onPress={() => setServer(DEFAULT_SERVER)}><Text style={s.muted}>Reset to the online game ({DEFAULT_SERVER})</Text></Pressable>
+      </>}
     </KeyboardAvoidingView>
   );
 
@@ -222,35 +204,6 @@ export default function App() {
   );
 }
 
-function Scanner({ onCode, onCancel }) {
-  const [perm, requestPerm] = useCameraPermissions();
-  const done = useRef(false);
-  const [msg, setMsg] = useState('Point at the QR code on the laptop screen');
-  if (!perm) return <View style={s.root} />;
-  if (!perm.granted) return (
-    <View style={[s.root, { justifyContent: 'center' }]}>
-      <Text style={s.muted}>The camera is only used to read the game's QR code.</Text>
-      <Pressable style={[s.btn, s.primary]} onPress={requestPerm}><Text style={s.btnTextDark}>Allow camera</Text></Pressable>
-      <Pressable style={s.btn} onPress={onCancel}><Text style={s.btnText}>Back</Text></Pressable>
-    </View>
-  );
-  return (
-    <View style={{ flex: 1, backgroundColor: '#000' }}>
-      <CameraView style={{ flex: 1 }} barcodeScannerSettings={{ barcodeTypes: ['qr'] }}
-        onBarcodeScanned={({ data }) => {
-          if (done.current) return;
-          const p = parsePairing(data);
-          if (!p) return setMsg(`That QR code is not a Tilt Maze game:\n${String(data).slice(0, 80)}`);
-          done.current = true; onCode(p);
-        }} />
-      <View style={s.scanBar}>
-        <Text style={[s.muted, { color: '#fff' }]}>{msg}</Text>
-        <Pressable style={s.btn} onPress={onCancel}><Text style={s.btnText}>Cancel</Text></Pressable>
-      </View>
-    </View>
-  );
-}
-
 const s = StyleSheet.create({
   root: { flex: 1, backgroundColor: '#14120f', padding: 20, paddingTop: 56, gap: 12 },
   h1: { color: '#f3efe7', fontSize: 36, fontWeight: '800' },
@@ -273,5 +226,4 @@ const s = StyleSheet.create({
   padHint: { position: 'absolute', bottom: 8, width: '100%', textAlign: 'center', color: '#a39d92', fontSize: 12 },
   count: { ...StyleSheet.absoluteFillObject, backgroundColor: '#0008', alignItems: 'center', justifyContent: 'center' },
   countText: { color: '#fff', fontSize: 120, fontWeight: '800' },
-  scanBar: { position: 'absolute', bottom: 0, left: 0, right: 0, padding: 20, gap: 10, backgroundColor: '#000a' },
 });

@@ -8,7 +8,7 @@ This project turns a phone into a real-time motion controller for a browser game
 
 | Part | Folder | Tech |
 |---|---|---|
-| Phone app | `app/` | React Native (Expo SDK 58): `expo-sensors` DeviceMotion, `expo-camera` QR scanner, haptics, keep-awake |
+| Phone app | `app/` | React Native (Expo SDK 58): `expo-sensors` DeviceMotion, haptics, keep-awake, Android App Link |
 | Browser game | `public/index.html` | HTML canvas: maze physics, QR code, players, leaderboard, ghosts |
 | Server | `server.js` | Node.js + `ws`: room pairing and relay, leaderboard |
 
@@ -23,12 +23,12 @@ Open **http://localhost:5180** on the laptop. It shows a room code and a QR code
 
 **Phone app:**
 1. Install `TiltPad.apk` from the link above. Allow "install unknown apps" for your browser when Android asks.
-2. Open **Tilt Pad**, type your name, tap **SCAN QR TO START** and point the camera at the laptop's QR code.
+2. Open **Tilt Pad**, type your name and the **4-letter code** shown on the game screen, and tap **▶ START**.
 3. Hold the phone flat, tap **Set level**, and tilt to roll your ball. Shake the phone or tap **JUMP** to hop over holes.
 
-The phone and the laptop must be on the same network. If campus Wi-Fi blocks device-to-device traffic, turn on the laptop's Mobile Hotspot and connect the phone to it.
+The app connects to the live game (`wss://tilt-maze.onrender.com`) by default, so any network works. To use a game running on your own laptop, open **Server** in the app and type the address shown on the laptop (for example `192.168.137.1:5180`). The phone must then be on the same network as the laptop.
 
-You can also type the server address (shown under the QR code, e.g. `192.168.137.1:5180`) and the 4-letter code by hand instead of scanning.
+Shortcut: scanning the online game's QR code with the phone's normal camera app opens Tilt Pad and joins directly. This uses an Android App Link, verified through `/.well-known/assetlinks.json`.
 
 **Build the APK yourself:**
 ```
@@ -45,7 +45,7 @@ cd android && ./gradlew assembleRelease     # needs JDK 17+ and the Android SDK 
 | Requirement | How it is done |
 |---|---|
 | Gyro + accelerometer mapping | `deviceorientation` gamma/beta map to steering, with ±12° for full speed and clamping. `devicemotion` with acceleration above 14 m/s² counts as a shake and makes the ball jump (700 ms cooldown). |
-| Pairing | The server issues a 4-letter room code. The game shows a QR code pointing to the pad URL with the code built in, and you can also type the code by hand. |
+| Pairing | The server issues a 4-letter room code, which you type into the app. The game also shows a QR code: the phone camera opens the app straight into the room (App Link), and the browser pad uses the same QR. |
 | WebSocket streaming | The phone sends `{t:'s',x,y}` at 60 Hz, only when the value changes, plus a 250 ms keepalive. The server is a thin relay with no game logic. |
 | Browser game | A ball-balancing tilt maze with walls, holes (fall means respawn), a finish flag, race timer and falls counter. Physics uses sub-stepping, so fast balls cannot pass through walls. |
 | Calibration | **Calibrate** stores the current pose as neutral. It is saved in `localStorage`, so it survives reloads. |

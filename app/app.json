@@ -3,7 +3,7 @@
     "name": "Tilt Pad",
     "slug": "tilt-pad",
     "scheme": "tiltpad",
-    "version": "1.0.3",
+    "version": "1.0.4",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "dark",
@@ -14,30 +14,58 @@
     },
     "android": {
       "package": "com.towvansh.tiltpad",
-      "versionCode": 4,
+      "versionCode": 5,
       "intentFilters": [
         {
           "action": "VIEW",
           "autoVerify": true,
-          "data": [{ "scheme": "https", "host": "tilt-maze.onrender.com", "pathPrefix": "/pad.html" }],
-          "category": ["BROWSABLE", "DEFAULT"]
+          "data": [
+            {
+              "scheme": "https",
+              "host": "tilt-maze.onrender.com",
+              "pathPrefix": "/pad.html"
+            }
+          ],
+          "category": [
+            "BROWSABLE",
+            "DEFAULT"
+          ]
         }
       ],
-      "permissions": ["android.permission.VIBRATE", "android.permission.CAMERA", "android.permission.INTERNET"],
+      "permissions": [
+        "android.permission.VIBRATE",
+        "android.permission.INTERNET"
+      ],
       "adaptiveIcon": {
         "backgroundColor": "#14120f",
         "foregroundImage": "./assets/android-icon-foreground.png",
         "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
-      }
+      },
+      "blockedPermissions": [
+        "android.permission.CAMERA",
+        "android.permission.RECORD_AUDIO",
+        "android.permission.SYSTEM_ALERT_WINDOW"
+      ]
     },
     "web": {
       "favicon": "./assets/favicon.png"
     },
     "plugins": [
-      ["expo-build-properties", { "android": { "usesCleartextTraffic": true } }],
-      ["expo-camera", { "cameraPermission": "Tilt Pad uses the camera to scan the game's QR code.", "barcodeScannerEnabled": true }],
-      ["expo-sensors", { "motionPermission": "Tilt Pad reads the motion sensors to steer the ball." }]
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "usesCleartextTraffic": true
+          }
+        }
+      ],
+      [
+        "expo-sensors",
+        {
+          "motionPermission": "Tilt Pad reads the motion sensors to steer the ball."
+        }
+      ]
     ]
   }
 }
